@@ -200,7 +200,12 @@ def get_candles(
     limit: int = Query(default=100, le=1000),
     db: Session = Depends(get_db)
 ):
-    """Get candles for a stock"""
+    """
+    Get candles for a stock.
+
+    Note: All timestamps are in UTC and represent the candle OPEN time.
+    Frontend should convert to IST (UTC+5:30) for display.
+    """
     stock = db.query(Stock).filter(Stock.symbol == symbol.upper()).first()
     if not stock:
         raise HTTPException(status_code=404, detail=f"Stock {symbol} not found")
@@ -225,7 +230,7 @@ def get_candles(
     
     return [
         {
-            "timestamp": c.timestamp.isoformat(),
+            "timestamp": c.timestamp.isoformat() + "Z",  # Add Z to indicate UTC
             "open": c.open,
             "high": c.high,
             "low": c.low,
@@ -257,7 +262,7 @@ def get_latest_candle(symbol: str, timeframe: str = "1d", db: Session = Depends(
         .first()
     )
     
-    return {"latest_timestamp": latest.timestamp.isoformat() if latest else None}
+    return {"latest_timestamp": latest.timestamp.isoformat() + "Z" if latest else None}
 
 
 # ============ CANDLE SYNC ============
@@ -301,14 +306,42 @@ def sync_stock_candles(
     else:
         results = sync_all_timeframes(db, symbol, full_sync)
 
-        # Calculate indicators for all timeframes
+        # Calculate indicators for all timeframes in parallel (only for timeframes with new candles)
         if stock:
-            for tf_name, tf in tf_map.items():
-                indicator_result = calculate_indicators_for_candles(db, stock.id, tf)
-                # Find matching result and add indicator info
-                for r in results:
-                    if r.get("timeframe") == tf_name:
-                        r["indicators_calculated"] = indicator_result
+            from concurrent.futures import ThreadPoolExecutor, as_completed
+            from database import SessionLocal
+
+            # Find timeframes that have new candles
+            timeframes_with_new_candles = []
+            for r in results:
+                if r.get("success") and r.get("new_candles", 0) > 0:
+                    tf_name = r.get("timeframe")
+                    if tf_name in tf_map:
+                        timeframes_with_new_candles.append((tf_name, tf_map[tf_name]))
+
+            def calc_indicators_for_tf(tf_name: str, tf: TimeFrame):
+                """Calculate indicators for a single timeframe with its own DB session"""
+                thread_db = SessionLocal()
+                try:
+                    return tf_name, calculate_indicators_for_candles(thread_db, stock.id, tf)
+                finally:
+                    thread_db.close()
+
+            # Only calculate indicators for timeframes with new candles
+            if timeframes_with_new_candles:
+                with ThreadPoolExecutor(max_workers=5) as executor:
+                    futures = {executor.submit(calc_indicators_for_tf, tf_name, tf): tf_name
+                              for tf_name, tf in timeframes_with_new_candles}
+
+                    for future in as_completed(futures):
+                        try:
+                            tf_name, indicator_result = future.result()
+                            # Find matching result and add indicator info
+                            for r in results:
+                                if r.get("timeframe") == tf_name:
+                                    r["indicators_calculated"] = indicator_result
+                        except Exception as e:
+                            print(f"Error calculating indicators: {str(e)}")
 
         return {"symbol": symbol.upper(), "results": results}
 
@@ -359,11 +392,125 @@ def get_trades(
             "quantity": t.quantity,
             "price": t.price,
             "total_value": t.total_value,
-            "timestamp": t.timestamp.isoformat(),
+            "timestamp": t.timestamp.isoformat() + "Z",
             "notes": t.notes
         })
     
     return result
+
+
+@app.post("/trades/execute", tags=["Trades"])
+def execute_trade(
+    symbol: str,
+    trade_type: str,  # BUY or SELL
+    quantity: float,
+    price: float,
+    strategy: str = "MANUAL",
+    notes: Optional[str] = None,
+    db: Session = Depends(get_db)
+):
+    """
+    Execute a paper trade (buy or sell)
+    - symbol: Stock symbol
+    - trade_type: BUY or SELL
+    - quantity: Number of shares/units
+    - price: Current price per unit
+    - strategy: Strategy that triggered the trade (or MANUAL)
+    """
+    # Validate trade type
+    trade_type = trade_type.upper()
+    if trade_type not in ["BUY", "SELL"]:
+        raise HTTPException(status_code=400, detail="trade_type must be BUY or SELL")
+
+    # Get stock
+    stock = db.query(Stock).filter(Stock.symbol == symbol.upper()).first()
+    if not stock:
+        raise HTTPException(status_code=404, detail=f"Stock {symbol} not found")
+
+    # Get portfolio
+    portfolio = db.query(Portfolio).first()
+    if not portfolio:
+        portfolio = Portfolio(cash_balance=10000.0, initial_capital=10000.0)
+        db.add(portfolio)
+        db.commit()
+        db.refresh(portfolio)
+
+    total_value = quantity * price
+
+    # Get or create holding for this stock
+    holding = db.query(Holding).filter(Holding.stock_id == stock.id).first()
+    if not holding:
+        holding = Holding(stock_id=stock.id, quantity=0, avg_buy_price=0.0)
+        db.add(holding)
+
+    if trade_type == "BUY":
+        # Check if enough cash
+        if portfolio.cash_balance < total_value:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Insufficient funds. Available: ${portfolio.cash_balance:.2f}, Required: ${total_value:.2f}"
+            )
+
+        # Update portfolio cash
+        portfolio.cash_balance -= total_value
+
+        # Update holding (calculate new average price)
+        total_cost = (holding.quantity * holding.avg_buy_price) + total_value
+        holding.quantity += quantity
+        holding.avg_buy_price = total_cost / holding.quantity if holding.quantity > 0 else 0
+
+    else:  # SELL
+        # Check if enough shares to sell
+        if holding.quantity < quantity:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Insufficient shares. Available: {holding.quantity}, Trying to sell: {quantity}"
+            )
+
+        # Update portfolio cash
+        portfolio.cash_balance += total_value
+
+        # Update holding
+        holding.quantity -= quantity
+        # Keep avg_buy_price for P&L calculation (don't reset on sell)
+
+    # Map strategy string to enum
+    try:
+        strategy_enum = StrategyType(strategy.upper())
+    except ValueError:
+        # Default to MANUAL for unknown strategies
+        strategy_enum = StrategyType.MANUAL
+
+    # Create trade record
+    trade = Trade(
+        stock_id=stock.id,
+        trade_type=TradeType.BUY if trade_type == "BUY" else TradeType.SELL,
+        strategy=strategy_enum,
+        quantity=quantity,
+        price=price,
+        total_value=total_value,
+        notes=notes or f"Paper trade via {strategy}"
+    )
+    db.add(trade)
+    db.commit()
+
+    return {
+        "success": True,
+        "trade": {
+            "id": trade.id,
+            "symbol": symbol.upper(),
+            "type": trade_type,
+            "quantity": quantity,
+            "price": price,
+            "total_value": round(total_value, 2),
+            "timestamp": trade.timestamp.isoformat() + "Z"
+        },
+        "portfolio": {
+            "cash_balance": round(portfolio.cash_balance, 2),
+            "holding_quantity": holding.quantity,
+            "holding_avg_price": round(holding.avg_buy_price, 2)
+        }
+    }
 
 
 # ============ SIGNALS ============
@@ -498,7 +645,7 @@ def _get_stored_indicator_values(db: Session, stock_id: int, timeframe: TimeFram
     # Populate data in chronological order (reverse the desc order)
     for candle in reversed(candles):
         result["candles"].append({
-            "timestamp": candle.timestamp.isoformat(),
+            "timestamp": candle.timestamp.isoformat() + "Z",
             "open": candle.open,
             "high": candle.high,
             "low": candle.low,
@@ -510,7 +657,7 @@ def _get_stored_indicator_values(db: Session, stock_id: int, timeframe: TimeFram
 
         for strat in strategies:
             ind = candle_indicators.get(strat)
-            ts = candle.timestamp.isoformat()
+            ts = candle.timestamp.isoformat() + "Z"
 
             if ind:
                 result["indicators"][strat]["signal"].append(ind.signal)
@@ -608,7 +755,7 @@ def _get_latest_signal_from_stored(db: Session, stock_id: int, timeframe: TimeFr
         "strategy": strategy.upper(),
         "signal": indicator.signal or "HOLD",
         "strength": indicator.strength or 50,
-        "timestamp": latest_candle.timestamp.isoformat(),
+        "timestamp": latest_candle.timestamp.isoformat() + "Z",
         "indicators": {}
     }
 

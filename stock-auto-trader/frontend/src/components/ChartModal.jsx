@@ -351,14 +351,14 @@ const ChartModal = ({ isOpen, onClose, strategy, signal, candles: initialCandles
 
         <div className="chart-modal-body" ref={chartBodyRef}>
           {/* MTF Dashboard for MTF_EMA strategy - positioned top right, draggable */}
-          {strategy === 'MTF_EMA' && (chartSignal?.indicators?.trend_dashboard || chartSignal?.indicators?.bullish_count !== undefined || chartSignal?.indicators?.ema_trends) && (
+          {strategy === 'MTF_EMA' && chartSignal?.indicators && (
             <div className="mtf-dashboard-modal-overlay">
               <MTFDashboard
-                trendDashboard={chartSignal.indicators.trend_dashboard}
+                trendDashboard={chartSignal.indicators.trend_dashboard || null}
                 bullishCount={chartSignal.indicators.bullish_count}
                 bearishCount={chartSignal.indicators.bearish_count}
                 totalCells={chartSignal.indicators.total_cells}
-                emaTrends={chartSignal.indicators.ema_trends}
+                emaTrends={chartSignal.indicators.ema_trends || null}
                 currentTimeframe={selectedTimeframe}
                 draggable={true}
               />

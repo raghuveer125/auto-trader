@@ -1,9 +1,10 @@
-import { useState, useEffect } from 'react';
-import { RefreshCw, DollarSign, TrendingUp, ChevronDown } from 'lucide-react';
+import { ChevronDown, DollarSign, RefreshCw, TrendingUp } from 'lucide-react';
+import { useEffect, useState } from 'react';
 import Sidebar from '../components/Sidebar';
-import StrategyCard from '../components/StrategyCard';
 import SignalsTable from '../components/SignalsTable';
-import { stocksAPI, portfolioAPI, candlesAPI, signalsAPI, tradesAPI } from '../services/api';
+import StrategyCard from '../components/StrategyCard';
+import TradesTable from '../components/TradesTable';
+import { candlesAPI, portfolioAPI, signalsAPI, stocksAPI, tradesAPI } from '../services/api';
 import './Dashboard.css';
 
 const Dashboard = () => {
@@ -128,6 +129,27 @@ const Dashboard = () => {
         ? prev.filter((s) => s !== strategyName)
         : [...prev, strategyName]
     );
+  };
+
+  // Refresh portfolio data after trade execution
+  const refreshPortfolioData = async () => {
+    try {
+      console.log('🔄 Refreshing portfolio and trades after trade execution...');
+
+      // Refresh portfolio
+      const portfolioRes = await portfolioAPI.get();
+      setPortfolio(portfolioRes.data);
+      console.log('✅ Portfolio refreshed:', portfolioRes.data);
+
+      // Refresh trades for current stock
+      if (selectedStock) {
+        const tradesRes = await tradesAPI.getAll(selectedStock, 50);
+        setTrades(tradesRes.data);
+        console.log('✅ Trades refreshed:', tradesRes.data.length, 'trades');
+      }
+    } catch (error) {
+      console.error('Error refreshing portfolio:', error);
+    }
   };
 
   // Callback to refresh signals after strategy settings are saved
@@ -276,7 +298,57 @@ const Dashboard = () => {
           </div>
         ) : (
           <>
+            {/* Consolidated Stock Overview */}
+            <div className="stock-overview-card">
+              <div className="stock-overview-header">
+                <h2>{selectedStock}</h2>
+                <div className="stock-price">
+                  <span className="price-label">Current Price:</span>
+                  <span className="price-value">
+                    ${candles.length > 0 ? candles[candles.length - 1].close.toFixed(2) : '—'}
+                  </span>
+                </div>
+              </div>
+              <div className="stock-overview-stats">
+                <div className="stat-item">
+                  <span className="stat-label">Overall Signal</span>
+                  <span className={`stat-value signal-${filteredSignals[0]?.signal?.toLowerCase() || 'hold'}`}>
+                    {filteredSignals.filter(s => s.signal === 'BUY').length > filteredSignals.filter(s => s.signal === 'SELL').length
+                      ? 'BUY'
+                      : filteredSignals.filter(s => s.signal === 'SELL').length > filteredSignals.filter(s => s.signal === 'BUY').length
+                        ? 'SELL'
+                        : 'HOLD'}
+                  </span>
+                </div>
+                <div className="stat-item">
+                  <span className="stat-label">Buy Signals</span>
+                  <span className="stat-value buy">{filteredSignals.filter(s => s.signal === 'BUY').length}</span>
+                </div>
+                <div className="stat-item">
+                  <span className="stat-label">Sell Signals</span>
+                  <span className="stat-value sell">{filteredSignals.filter(s => s.signal === 'SELL').length}</span>
+                </div>
+                <div className="stat-item">
+                  <span className="stat-label">Hold Signals</span>
+                  <span className="stat-value hold">{filteredSignals.filter(s => s.signal === 'HOLD').length}</span>
+                </div>
+                <div className="stat-item">
+                  <span className="stat-label">Active Strategies</span>
+                  <span className="stat-value">{filteredSignals.length}</span>
+                </div>
+              </div>
+            </div>
+
             <SignalsTable signals={filteredSignals} symbol={selectedStock} />
+
+            {/* Consolidated Trades Table */}
+            {trades && trades.length > 0 && (
+              <div className="consolidated-trades-section">
+                <h2 className="section-title">Consolidated Trade Report</h2>
+                <TradesTable trades={trades} strategy={null} />
+              </div>
+            )}
+
             <div className="strategy-grid">
               {filteredSignals.map((signal) => (
                 <StrategyCard
@@ -287,6 +359,7 @@ const Dashboard = () => {
                   trades={trades}
                   symbol={selectedStock}
                   globalTimeframe={globalTimeframe}
+                  onTradeExecuted={refreshPortfolioData}
                 />
               ))}
             </div>

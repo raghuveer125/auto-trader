@@ -62,6 +62,10 @@ export const strategySettingsAPI = {
 export const tradesAPI = {
   getAll: (symbol = null, limit = 50) =>
     api.get('/trades', { params: { symbol, limit } }),
+  execute: (symbol, tradeType, quantity, price, strategy = 'MANUAL', notes = null) =>
+    api.post('/trades/execute', null, {
+      params: { symbol, trade_type: tradeType, quantity, price, strategy, notes }
+    }),
 };
 
 export default api;

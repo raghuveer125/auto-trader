@@ -1,5 +1,5 @@
-import { useEffect, useRef } from 'react';
 import { createChart } from 'lightweight-charts';
+import { useEffect, useRef } from 'react';
 import './TradingChart.css';
 
 const TradingChart = ({ data, signals = [], height = 400, currentSignal = null, strategyName = '', indicators = null, trades = [] }) => {
@@ -34,11 +34,10 @@ const TradingChart = ({ data, signals = [], height = 400, currentSignal = null, 
         timeVisible: true,
         secondsVisible: false,
         // Convert to IST (UTC+5:30)
+        // Backend sends UTC timestamps, browser converts to IST
         tickMarkFormatter: (time) => {
           const date = new Date(time * 1000);
-          // Add 5 hours 30 minutes for IST
-          const istDate = new Date(date.getTime() + (5.5 * 60 * 60 * 1000));
-          return istDate.toLocaleString('en-IN', {
+          return date.toLocaleString('en-IN', {
             month: 'short',
             day: 'numeric',
             hour: '2-digit',
@@ -144,18 +143,18 @@ const TradingChart = ({ data, signals = [], height = 400, currentSignal = null, 
     // Add indicator lines based on strategy
     if (indicators && strategyName) {
       // MA_CROSSOVER Strategy - Add EMA/SMA lines
-      if ((strategyName === 'MA_CROSSOVER' || strategyName === 'MA_CROSSOVER ') && 
-          (indicators.short_ema_20 || indicators.short_sma_20)) {
-        
+      if ((strategyName === 'MA_CROSSOVER' || strategyName === 'MA_CROSSOVER ') &&
+        (indicators.short_ema_20 || indicators.short_sma_20)) {
+
         // Determine if using EMA or SMA
         const shortKey = indicators.short_ema_20 ? 'short_ema_20' : 'short_sma_20';
         const longKey = indicators.long_ema_50 ? 'long_ema_50' : 'long_sma_50';
-        
+
         // Get historical data
         const shortMaLine = indicators.short_ma_line || [];
         const longMaLine = indicators.long_ma_line || [];
         const timestamps = indicators.timestamps || [];
-        
+
         if (shortMaLine.length > 0 && longMaLine.length > 0) {
           const emaShortSeries = chart.addLineSeries({
             color: '#3b82f6',
@@ -187,9 +186,9 @@ const TradingChart = ({ data, signals = [], height = 400, currentSignal = null, 
       }
 
       // BOLLINGER Strategy - Add Bollinger Bands
-      if ((strategyName === 'BOLLINGER' || strategyName === 'BOLLINGER ') && 
-          indicators.upper_band_line && indicators.lower_band_line && indicators.middle_band_line) {
-        
+      if ((strategyName === 'BOLLINGER' || strategyName === 'BOLLINGER ') &&
+        indicators.upper_band_line && indicators.lower_band_line && indicators.middle_band_line) {
+
         const upperBandSeries = chart.addLineSeries({
           color: '#ef4444',
           lineWidth: 1,
@@ -237,7 +236,7 @@ const TradingChart = ({ data, signals = [], height = 400, currentSignal = null, 
 
       // MACD Strategy - Add MACD lines (using histogram as area series)
       if ((strategyName === 'MACD' || strategyName === 'MACD ') &&
-          indicators.macd_line && indicators.signal_line && indicators.histogram_line) {
+        indicators.macd_line && indicators.signal_line && indicators.histogram_line) {
 
         // Create MACD line series with separate price scale
         const macdLineSeries = chart.addLineSeries({

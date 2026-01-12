@@ -1,11 +1,48 @@
 import { ChevronDown, Maximize2, Minus, RefreshCw, TrendingDown, TrendingUp } from 'lucide-react';
-import { useEffect, useRef, useState } from 'react';
+import { Component, useEffect, useRef, useState } from 'react';
 import { candlesAPI, indicatorsAPI, signalsAPI } from '../services/api';
 import ChartModal from './ChartModal';
 import MTFDashboard from './MTFDashboard';
+import PaperTradingPanel from './PaperTradingPanel';
 import './StrategyCard.css';
 import TradesTable from './TradesTable';
 import TradingChartWithIndicators from './TradingChartWithIndicators';
+
+// Error boundary to prevent crashes
+class StrategyCardErrorBoundary extends Component {
+  constructor(props) {
+    super(props);
+    this.state = { hasError: false, error: null };
+  }
+
+  static getDerivedStateFromError(error) {
+    return { hasError: true, error };
+  }
+
+  componentDidCatch(error, errorInfo) {
+    console.error(`❌ StrategyCard error for ${this.props.strategy}:`, error, errorInfo);
+    console.error('Props:', this.props);
+  }
+
+  render() {
+    if (this.state.hasError) {
+      return (
+        <div className="strategy-card strategy-card-error">
+          <div className="strategy-header">
+            <div className="strategy-name">
+              <h3>{this.props.strategy || 'Strategy'}</h3>
+              <p className="strategy-description">Error loading strategy</p>
+            </div>
+          </div>
+          <div className="error-message">
+            <p>Unable to load this strategy card. Please try refreshing.</p>
+          </div>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
 
 const TIMEFRAMES = [
   { value: '1m', label: '1m' },
@@ -14,22 +51,24 @@ const TIMEFRAMES = [
   { value: '1d', label: '1d' },
 ];
 
-const StrategyCard = ({ strategy, signal: initialSignal, candles: initialCandles, trades = [], symbol, globalTimeframe = '1d' }) => {
+const StrategyCard = ({ strategy, signal: initialSignal, candles: initialCandles, trades = [], symbol, globalTimeframe = '1d', onTradeExecuted }) => {
   const [isModalOpen, setIsModalOpen] = useState(false);
 
   // Timeframe state
   const [selectedTimeframe, setSelectedTimeframe] = useState('1d');
-  const [chartCandles, setChartCandles] = useState(initialCandles);
-  const [chartSignal, setChartSignal] = useState(initialSignal);
+  const [chartCandles, setChartCandles] = useState(initialCandles || []);
+  const [chartSignal, setChartSignal] = useState(initialSignal || null);
   const [loading, setLoading] = useState(false);
   const [syncing, setSyncing] = useState(false);
   const [dropdownOpen, setDropdownOpen] = useState(false);
+  const [isMinimized, setIsMinimized] = useState(false);
   const dropdownRef = useRef(null);
+  const cardRef = useRef(null);
 
   // Reset to initial data when props change
   useEffect(() => {
-    setChartCandles(initialCandles);
-    setChartSignal(initialSignal);
+    setChartCandles(initialCandles || []);
+    setChartSignal(initialSignal || null);
     setSelectedTimeframe(globalTimeframe);
   }, [initialCandles, initialSignal, globalTimeframe]);
 
@@ -280,8 +319,28 @@ const StrategyCard = ({ strategy, signal: initialSignal, candles: initialCandles
   // Use initialSignal for the header/badge (always shows original), chartSignal for indicators/chart
   const displaySignal = chartSignal || initialSignal;
 
+  // Safety check - if no initial signal, show error state
+  if (!initialSignal) {
+    return (
+      <div className="strategy-card strategy-card-error">
+        <div className="strategy-header">
+          <div className="strategy-name">
+            <h3>{strategy.replace('_', ' ')}</h3>
+            <p className="strategy-description">No signal data available</p>
+          </div>
+        </div>
+        <div className="error-message">
+          <p>Unable to load signal data for {strategy}. Try syncing data.</p>
+        </div>
+      </div>
+    );
+  }
+
   return (
-    <div className="strategy-card">
+    <div
+      ref={cardRef}
+      className={`strategy-card ${isMinimized ? 'minimized' : ''}`}
+    >
       <div className="strategy-header">
         <div className="strategy-name">
           <div className={`strategy-icon ${strategy.toLowerCase()}`}>
@@ -292,61 +351,9 @@ const StrategyCard = ({ strategy, signal: initialSignal, candles: initialCandles
             <p className="strategy-description">{initialSignal?.reason || ''}</p>
           </div>
         </div>
-      </div>
 
-      <div className="signal-section">
-        <div className={`signal-badge ${getSignalClass(initialSignal?.signal)}`}>
-          {getSignalIcon(initialSignal?.signal)}
-          <span>{initialSignal?.signal || 'HOLD'}</span>
-        </div>
-        <div className="signal-strength">
-          <span className="strength-label">Strength:</span>
-          <div className="strength-bar">
-            <div
-              className={`strength-fill ${getSignalClass(initialSignal?.signal)}`}
-              style={{ width: `${initialSignal?.strength || 0}%` }}
-            ></div>
-          </div>
-          <span className="strength-value">{initialSignal?.strength || 0}%</span>
-        </div>
-      </div>
-
-      {/* MTF_EMA Dashboard */}
-      {strategy === 'MTF_EMA' && (displaySignal?.indicators?.trend_dashboard || displaySignal?.indicators?.ema_trends) && (
-        <MTFDashboard
-          trendDashboard={displaySignal.indicators.trend_dashboard}
-          bullishCount={displaySignal.indicators.bullish_count}
-          bearishCount={displaySignal.indicators.bearish_count}
-          totalCells={displaySignal.indicators.total_cells}
-          emaTrends={displaySignal.indicators.ema_trends}
-          currentTimeframe={selectedTimeframe}
-        />
-      )}
-
-      {displaySignal?.indicators && Object.keys(displaySignal.indicators).length > 0 && strategy !== 'MTF_EMA' && (
-        <div className="indicators-section">
-          <h4>Indicators</h4>
-          <div className="indicators-grid">
-            {Object.entries(displaySignal.indicators).map(([key, value]) => {
-              // Skip array-type and object-type values
-              if (Array.isArray(value) || (typeof value === 'object' && value !== null)) {
-                return null;
-              }
-              return (
-                <div key={key} className="indicator-item">
-                  <span className="indicator-label">{key.replace(/_/g, ' ').toUpperCase()}</span>
-                  <span className="indicator-value">
-                    {typeof value === 'number' ? value.toFixed(2) : String(value)}
-                  </span>
-                </div>
-              );
-            })}
-          </div>
-        </div>
-      )}
-
-      <div className="chart-section">
-        <div className="chart-controls">
+        {/* Chart Controls - Timeframe, Sync, Expand */}
+        <div className="chart-controls-header">
           {/* Timeframe Dropdown */}
           <div className="timeframe-dropdown-card" ref={dropdownRef}>
             <button
@@ -390,50 +397,138 @@ const StrategyCard = ({ strategy, signal: initialSignal, candles: initialCandles
             <Maximize2 size={16} />
             Expand
           </button>
-        </div>
 
-        {loading ? (
-          <div className="chart-loading-card">
-            <RefreshCw size={24} className="spinning" />
-            <span>Loading {selectedTimeframe} data...</span>
-          </div>
-        ) : chartCandles && chartCandles.length > 0 ? (
-          <TradingChartWithIndicators
-            data={chartCandles}
-            height={300}
-            currentSignal={displaySignal?.signal || 'HOLD'}
-            strategyName={strategy}
-            indicators={displaySignal?.indicators || {}}
-            trades={trades}
-          />
-        ) : (
-          <div className="chart-no-data-card">
-            <p>No {selectedTimeframe} data available</p>
-            <button
-              className="btn-sync-card"
-              onClick={handleSyncTimeframe}
-              disabled={syncing}
-            >
-              <RefreshCw size={14} className={syncing ? 'spinning' : ''} />
-              {syncing ? 'Syncing...' : `Sync ${selectedTimeframe}`}
-            </button>
-          </div>
-        )}
+          <button
+            className="chart-minimize-btn"
+            onClick={() => setIsMinimized(!isMinimized)}
+            title={isMinimized ? "Maximize card" : "Minimize card"}
+          >
+            {isMinimized ? <Maximize2 size={16} /> : <Minus size={16} />}
+          </button>
+        </div>
       </div>
 
-      <TradesTable trades={trades} strategy={strategy} />
+      {!isMinimized && (
+        <>
+          <div className="signal-section">
+            <div className={`signal-badge ${getSignalClass(initialSignal?.signal)}`}>
+              {getSignalIcon(initialSignal?.signal)}
+              <span>{initialSignal?.signal || 'HOLD'}</span>
+            </div>
+            <div className="signal-strength">
+              <span className="strength-label">Strength:</span>
+              <div className="strength-bar">
+                <div
+                  className={`strength-fill ${getSignalClass(initialSignal?.signal)}`}
+                  style={{ width: `${initialSignal?.strength || 0}%` }}
+                ></div>
+              </div>
+              <span className="strength-value">{initialSignal?.strength || 0}%</span>
+            </div>
+          </div>
 
-      <ChartModal
-        isOpen={isModalOpen}
-        onClose={() => setIsModalOpen(false)}
-        strategy={strategy}
-        signal={displaySignal || initialSignal}
-        candles={chartCandles || initialCandles}
-        symbol={symbol}
-        trades={trades}
-      />
+          {/* Paper Trading Panel */}
+          {symbol && (
+            <PaperTradingPanel
+              symbol={symbol}
+              currentPrice={
+                (chartCandles && chartCandles.length > 0)
+                  ? chartCandles[chartCandles.length - 1]?.close
+                  : (initialCandles && initialCandles.length > 0)
+                    ? initialCandles[initialCandles.length - 1]?.close
+                    : null
+              }
+              strategy={strategy}
+              onTradeExecuted={onTradeExecuted}
+            />
+          )}
+
+          {/* MTF_EMA Dashboard */}
+          {strategy === 'MTF_EMA' && displaySignal?.indicators && (
+            <MTFDashboard
+              trendDashboard={displaySignal.indicators.trend_dashboard || null}
+              bullishCount={displaySignal.indicators.bullish_count}
+              bearishCount={displaySignal.indicators.bearish_count}
+              totalCells={displaySignal.indicators.total_cells}
+              emaTrends={displaySignal.indicators.ema_trends || null}
+              currentTimeframe={selectedTimeframe}
+            />
+          )}
+
+          {displaySignal?.indicators && Object.keys(displaySignal.indicators).length > 0 && strategy !== 'MTF_EMA' && (
+            <div className="indicators-section">
+              <h4>Indicators</h4>
+              <div className="indicators-grid">
+                {Object.entries(displaySignal.indicators).map(([key, value]) => {
+                  // Skip array-type and object-type values
+                  if (Array.isArray(value) || (typeof value === 'object' && value !== null)) {
+                    return null;
+                  }
+                  return (
+                    <div key={key} className="indicator-item">
+                      <span className="indicator-label">{key.replace(/_/g, ' ').toUpperCase()}</span>
+                      <span className="indicator-value">
+                        {typeof value === 'number' ? value.toFixed(2) : String(value)}
+                      </span>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
+          <div className="chart-section">
+            {loading ? (
+              <div className="chart-loading-card">
+                <RefreshCw size={24} className="spinning" />
+                <span>Loading {selectedTimeframe} data...</span>
+              </div>
+            ) : chartCandles && chartCandles.length > 0 ? (
+              <TradingChartWithIndicators
+                data={chartCandles}
+                height={300}
+                currentSignal={displaySignal?.signal || 'HOLD'}
+                strategyName={strategy}
+                indicators={displaySignal?.indicators || {}}
+                trades={trades}
+              />
+            ) : (
+              <div className="chart-no-data-card">
+                <p>No {selectedTimeframe} data available</p>
+                <button
+                  className="btn-sync-card"
+                  onClick={handleSyncTimeframe}
+                  disabled={syncing}
+                >
+                  <RefreshCw size={14} className={syncing ? 'spinning' : ''} />
+                  {syncing ? 'Syncing...' : `Sync ${selectedTimeframe}`}
+                </button>
+              </div>
+            )}
+          </div>
+
+          <TradesTable trades={trades} strategy={strategy} />
+
+          <ChartModal
+            isOpen={isModalOpen}
+            onClose={() => setIsModalOpen(false)}
+            strategy={strategy}
+            signal={displaySignal || initialSignal}
+            candles={chartCandles || initialCandles}
+            symbol={symbol}
+            trades={trades}
+          />
+        </>
+      )}
     </div>
   );
 };
 
-export default StrategyCard;
+// Wrapper with error boundary
+const StrategyCardWithErrorBoundary = (props) => (
+  <StrategyCardErrorBoundary strategy={props.strategy}>
+    <StrategyCard {...props} />
+  </StrategyCardErrorBoundary>
+);
+
+export default StrategyCardWithErrorBoundary;

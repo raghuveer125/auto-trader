@@ -5,6 +5,7 @@ from sqlalchemy.orm import Session
 from typing import Optional, List, Dict
 from models import Stock, Candle, TimeFrame
 from services.binance_service import is_crypto_symbol, fetch_binance_candles
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 
 # Timeframe mapping for Yahoo Finance API
@@ -29,10 +30,10 @@ RESAMPLE_TIMEFRAMES = {
 
 
 def get_or_create_stock(db: Session, symbol: str) -> Stock:
-    """Get stock from DB or create if not exists"""
+    """Get stock from DB or create if not exists (thread-safe)"""
     symbol = symbol.upper().strip()
     stock = db.query(Stock).filter(Stock.symbol == symbol).first()
-    
+
     if not stock:
         # Fetch name from Yahoo Finance API
         try:
@@ -43,12 +44,19 @@ def get_or_create_stock(db: Session, symbol: str) -> Stock:
             name = data.get("quotes", [{}])[0].get("shortname", symbol)
         except:
             name = symbol
-        
-        stock = Stock(symbol=symbol, name=name)
-        db.add(stock)
-        db.commit()
-        db.refresh(stock)
-    
+
+        try:
+            stock = Stock(symbol=symbol, name=name)
+            db.add(stock)
+            db.commit()
+            db.refresh(stock)
+        except Exception as e:
+            # Handle race condition: another thread may have created it
+            db.rollback()
+            stock = db.query(Stock).filter(Stock.symbol == symbol).first()
+            if not stock:
+                raise e  # Re-raise if it's a different error
+
     return stock
 
 
@@ -71,6 +79,7 @@ def fetch_candles_from_yahoo_api(
     """Fetch candles from Yahoo Finance API or Binance for crypto"""
     # Use Binance for cryptocurrency symbols (proper OHLC data)
     if is_crypto_symbol(symbol):
+        print(f"[CRYPTO DETECTED] Using Binance API for {symbol}")
         return fetch_binance_candles(symbol, timeframe, start_timestamp)
 
     # Check if this timeframe needs resampling (for non-crypto via Yahoo)
@@ -125,8 +134,9 @@ def fetch_candles_from_yahoo_api(
         if any(quote[k][i] is None for k in ["open", "high", "low", "close"]):
             continue
 
-        # Normalize timestamp to remove microseconds for consistent comparison
-        candle_ts = datetime.fromtimestamp(ts).replace(microsecond=0)
+        # Use UTC timestamp for consistency across all data sources
+        # Yahoo Finance provides timestamps in UTC
+        candle_ts = datetime.utcfromtimestamp(ts).replace(microsecond=0)
 
         candles.append({
             "timestamp": candle_ts,
@@ -194,7 +204,7 @@ def _fetch_and_resample_candles(
         if any(quote[k][i] is None for k in ["open", "high", "low", "close"]):
             continue
         rows.append({
-            "timestamp": datetime.fromtimestamp(ts).replace(microsecond=0),
+            "timestamp": datetime.utcfromtimestamp(ts).replace(microsecond=0),
             "open": float(quote["open"][i]),
             "high": float(quote["high"][i]),
             "low": float(quote["low"][i]),
@@ -253,8 +263,8 @@ def sync_candles(
     full_sync: bool = False
 ) -> Dict:
     """
-    Sync candles from Yahoo Finance API to database
-    Checks for existing candles before inserting to prevent duplicates
+    Sync candles from Yahoo Finance API to database (incremental sync by default)
+    Only fetches missing candles to minimize API calls and improve performance
     Returns: dict with sync stats
     """
     symbol = symbol.upper().strip()
@@ -264,13 +274,45 @@ def sync_candles(
 
     # Determine start timestamp for sync
     start_timestamp = None
+    latest_timestamp = None
     if not full_sync:
         latest_timestamp = get_latest_candle_timestamp(db, stock.id, timeframe)
         if latest_timestamp:
             # Start from latest + 1 second to avoid duplicates
             start_timestamp = int(latest_timestamp.timestamp()) + 1
 
-    # Fetch from Yahoo Finance API
+            # Smart skip: For intraday timeframes, skip if latest candle is very recent
+            # This avoids unnecessary API calls when we know there's no new data
+            now = datetime.now()
+            time_diff = (now - latest_timestamp).total_seconds()
+
+            # Define minimum time before checking for new candles
+            min_check_intervals = {
+                TimeFrame.M1: 60,      # 1 minute
+                TimeFrame.M5: 300,     # 5 minutes
+                TimeFrame.M15: 900,    # 15 minutes
+                TimeFrame.M30: 1800,   # 30 minutes
+                TimeFrame.H1: 3600,    # 1 hour
+                TimeFrame.H2: 7200,    # 2 hours
+                TimeFrame.H3: 10800,   # 3 hours
+                TimeFrame.H4: 14400,   # 4 hours
+                TimeFrame.H5: 18000,   # 5 hours
+                TimeFrame.D1: 86400,   # 1 day
+            }
+
+            min_interval = min_check_intervals.get(timeframe, 60)
+
+            # Skip API call if latest candle is too recent
+            if time_diff < min_interval:
+                return {
+                    "success": True,
+                    "symbol": symbol,
+                    "timeframe": timeframe.value,
+                    "new_candles": 0,
+                    "message": f"No new candles expected (last candle: {int(time_diff)}s ago, min interval: {min_interval}s)"
+                }
+
+    # Fetch from API (Yahoo Finance or Binance for crypto)
     try:
         candles_data = fetch_candles_from_yahoo_api(symbol, timeframe, start_timestamp)
     except Exception as e:
@@ -348,11 +390,50 @@ def sync_candles(
 
 
 def sync_all_timeframes(db: Session, symbol: str, full_sync: bool = False) -> List[Dict]:
-    """Sync all timeframes for a symbol"""
+    """
+    Sync all timeframes for a symbol in parallel for better performance.
+    Uses ThreadPoolExecutor to fetch data from multiple timeframes concurrently.
+    """
+    from database import SessionLocal
+
+    def sync_single_timeframe(tf: TimeFrame):
+        """Helper function to sync a single timeframe with its own DB session"""
+        # Create a new session for this thread
+        thread_db = SessionLocal()
+        try:
+            result = sync_candles(thread_db, symbol, tf, full_sync)
+            return result
+        finally:
+            thread_db.close()
+
     results = []
-    for tf in TimeFrame:
-        result = sync_candles(db, symbol, tf, full_sync)
-        results.append(result)
+
+    # Use ThreadPoolExecutor for parallel syncing
+    # Use 10 workers for maximum parallelism (APIs can handle it)
+    with ThreadPoolExecutor(max_workers=10) as executor:
+        # Submit all timeframe sync tasks
+        future_to_tf = {executor.submit(sync_single_timeframe, tf): tf for tf in TimeFrame}
+
+        # Collect results as they complete
+        for future in as_completed(future_to_tf):
+            tf = future_to_tf[future]
+            try:
+                result = future.result()
+                results.append(result)
+            except Exception as e:
+                # If one timeframe fails, log it but continue with others
+                print(f"Error syncing {tf.value}: {str(e)}")
+                results.append({
+                    "success": False,
+                    "error": str(e),
+                    "symbol": symbol,
+                    "timeframe": tf.value
+                })
+
+    # Sort results by timeframe order for consistent output
+    timeframe_order = {tf.value: i for i, tf in enumerate(TimeFrame)}
+    results.sort(key=lambda x: timeframe_order.get(x.get("timeframe", "1m"), 999))
+
     return results
 
 

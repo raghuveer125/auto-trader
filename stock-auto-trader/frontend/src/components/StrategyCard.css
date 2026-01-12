@@ -18,6 +18,15 @@
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
+  gap: 16px;
+}
+
+/* Chart controls in header */
+.chart-controls-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
 }
 
 .strategy-name {
@@ -205,20 +214,10 @@
 
 .chart-section {
   margin-top: 8px;
-  position: relative;
 }
 
-.chart-controls {
-  position: absolute;
-  top: -32px;
-  left: 0;
-  z-index: 10;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
-.chart-expand-btn {
+.chart-expand-btn,
+.chart-minimize-btn {
   display: flex;
   align-items: center;
   gap: 6px;
@@ -234,7 +233,15 @@
   transition: all 0.2s ease;
 }
 
-.chart-expand-btn:hover {
+.chart-minimize-btn {
+  padding: 8px;
+  background: rgba(148, 163, 184, 0.1);
+  border-color: rgba(148, 163, 184, 0.3);
+  color: var(--text-secondary);
+}
+
+.chart-expand-btn:hover,
+.chart-minimize-btn:hover {
   background: var(--accent-blue);
   border-color: var(--accent-blue);
   color: white;
@@ -242,12 +249,30 @@
   box-shadow: 0 4px 12px rgba(59, 130, 246, 0.4);
 }
 
-.chart-expand-btn svg {
+.chart-minimize-btn:hover {
+  background: rgba(148, 163, 184, 0.3);
+  border-color: rgba(148, 163, 184, 0.5);
+  box-shadow: 0 4px 12px rgba(148, 163, 184, 0.2);
+}
+
+.chart-expand-btn svg,
+.chart-minimize-btn svg {
   transition: transform 0.2s ease;
 }
 
-.chart-expand-btn:hover svg {
+.chart-expand-btn:hover svg,
+.chart-minimize-btn:hover svg {
   transform: scale(1.1);
+}
+
+.strategy-card.minimized {
+  max-height: 80px;
+  overflow: hidden;
+}
+
+.strategy-card.minimized .strategy-header {
+  margin-bottom: 0;
+  padding-bottom: 0;
 }
 
 /* Timeframe Dropdown for Card */
@@ -310,6 +335,7 @@
     opacity: 0;
     transform: translateY(-8px);
   }
+
   to {
     opacity: 1;
     transform: translateY(0);
@@ -418,9 +444,28 @@
   from {
     transform: rotate(0deg);
   }
+
   to {
     transform: rotate(360deg);
   }
+}
+
+/* Error State */
+.strategy-card-error {
+  min-height: 200px;
+}
+
+.strategy-card-error .error-message {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 40px 20px;
+  text-align: center;
+  color: var(--text-secondary);
+  background: rgba(239, 68, 68, 0.1);
+  border: 1px solid rgba(239, 68, 68, 0.2);
+  border-radius: 8px;
+  margin-top: 16px;
 }
 
 @media (max-width: 768px) {

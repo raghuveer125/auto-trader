@@ -27,6 +27,34 @@
   gap: 20px;
 }
 
+.trades-minimize-btn {
+  display: flex;
+  align-items: center;
+  padding: 8px;
+  background: rgba(148, 163, 184, 0.1);
+  border: 1px solid rgba(148, 163, 184, 0.3);
+  border-radius: 6px;
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: all 0.2s ease;
+  margin-left: 8px;
+}
+
+.trades-minimize-btn:hover {
+  background: rgba(148, 163, 184, 0.2);
+  border-color: rgba(148, 163, 184, 0.5);
+  transform: translateY(-1px);
+}
+
+.trades-table-container.minimized {
+  max-height: 80px;
+  overflow: hidden;
+}
+
+.trades-table-container.minimized .trades-table-header {
+  margin-bottom: 0;
+}
+
 .trades-count {
   font-size: 14px;
   color: var(--text-secondary);

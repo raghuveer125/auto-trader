@@ -1,10 +1,37 @@
-import { useState, useRef, useEffect, useCallback } from 'react';
+import { useState, useRef, useEffect, useCallback, Component } from 'react';
 import { GripHorizontal } from 'lucide-react';
 import './MTFDashboard.css';
 
+// Error boundary to prevent crashes
+class MTFDashboardErrorBoundary extends Component {
+  constructor(props) {
+    super(props);
+    this.state = { hasError: false };
+  }
+
+  static getDerivedStateFromError() {
+    return { hasError: true };
+  }
+
+  componentDidCatch(error, errorInfo) {
+    console.error('MTFDashboard error:', error, errorInfo);
+  }
+
+  render() {
+    if (this.state.hasError) {
+      return (
+        <div className="mtf-dashboard-empty">
+          <p>MTF Dashboard unavailable</p>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
+
 const EMA_PERIODS = [20, 30, 40, 50, 60, 200, 300];
 
-const MTFDashboard = ({
+const MTFDashboardInner = ({
   trendDashboard,
   bullishCount,
   bearishCount,
@@ -185,5 +212,12 @@ const MTFDashboard = ({
     </div>
   );
 };
+
+// Wrapper with error boundary
+const MTFDashboard = (props) => (
+  <MTFDashboardErrorBoundary>
+    <MTFDashboardInner {...props} />
+  </MTFDashboardErrorBoundary>
+);
 
 export default MTFDashboard;

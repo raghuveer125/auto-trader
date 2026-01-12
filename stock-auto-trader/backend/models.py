@@ -7,6 +7,9 @@ from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import relationship, sessionmaker
 import enum
 
+# Note: Using native_enum=False ensures enum values are stored as strings in PostgreSQL
+# instead of storing enum member names, making the database more portable
+
 Base = declarative_base()
 
 
@@ -34,6 +37,7 @@ class StrategyType(enum.Enum):
     MA_CROSSOVER = "MA_CROSSOVER"
     BOLLINGER = "BOLLINGER"
     MTF_EMA = "MTF_EMA"
+    MANUAL = "MANUAL"
 
 
 # ============ STOCKS TABLE ============
@@ -56,7 +60,7 @@ class Candle(Base):
     
     id = Column(Integer, primary_key=True, autoincrement=True)
     stock_id = Column(Integer, ForeignKey("stocks.id"), nullable=False)
-    timeframe = Column(Enum(TimeFrame), nullable=False)
+    timeframe = Column(Enum(TimeFrame, native_enum=False), nullable=False)
     timestamp = Column(DateTime, nullable=False)
     open = Column(Float, nullable=False)
     high = Column(Float, nullable=False)
@@ -77,12 +81,12 @@ class Candle(Base):
 # ============ TRADES TABLE ============
 class Trade(Base):
     __tablename__ = "trades"
-    
+
     id = Column(Integer, primary_key=True, autoincrement=True)
     stock_id = Column(Integer, ForeignKey("stocks.id"), nullable=False)
-    trade_type = Column(Enum(TradeType), nullable=False)
-    strategy = Column(Enum(StrategyType), nullable=False)
-    quantity = Column(Integer, nullable=False)
+    trade_type = Column(Enum(TradeType, native_enum=False), nullable=False)
+    strategy = Column(Enum(StrategyType, native_enum=False), nullable=False)
+    quantity = Column(Float, nullable=False)
     price = Column(Float, nullable=False)
     total_value = Column(Float, nullable=False)
     timestamp = Column(DateTime, default=datetime.utcnow)
@@ -108,7 +112,7 @@ class Holding(Base):
 
     id = Column(Integer, primary_key=True, autoincrement=True)
     stock_id = Column(Integer, ForeignKey("stocks.id"), nullable=False, unique=True)
-    quantity = Column(Integer, default=0)
+    quantity = Column(Float, default=0)
     avg_buy_price = Column(Float, default=0.0)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
@@ -174,7 +178,7 @@ class StrategySettings(Base):
     __tablename__ = "strategy_settings"
 
     id = Column(Integer, primary_key=True, autoincrement=True)
-    strategy = Column(Enum(StrategyType), nullable=False, unique=True)
+    strategy = Column(Enum(StrategyType, native_enum=False), nullable=False, unique=True)
 
     # MACD settings
     macd_fast_period = Column(Integer, default=12)

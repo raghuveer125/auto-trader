@@ -20,6 +20,7 @@ def calculate_indicators_for_candles(
 ):
     """
     Calculate indicators for candles and store in indicator_values table.
+    Optimized to only calculate for candles without indicators.
 
     Args:
         db: Database session
@@ -39,7 +40,25 @@ def calculate_indicators_for_candles(
     if len(candles) < 50:
         return {"error": "Insufficient candles", "count": len(candles)}
 
-    # Convert to DataFrame
+    # Find candles that don't have indicators yet
+    if candle_ids is None:
+        # Get all candle IDs that already have indicators
+        existing_candle_ids = set(
+            db.query(IndicatorValue.candle_id)
+            .filter(IndicatorValue.candle_id.in_([c.id for c in candles]))
+            .distinct()
+            .all()
+        )
+        existing_candle_ids = {cid[0] for cid in existing_candle_ids}
+
+        # Find candles without indicators
+        candles_without_indicators = [c for c in candles if c.id not in existing_candle_ids]
+
+        # If no new candles need indicators, return early
+        if not candles_without_indicators:
+            return {"stored": 0, "strategies": []}
+
+    # Convert to DataFrame (we need all candles for proper indicator calculation)
     df = pd.DataFrame([{
         "id": c.id,
         "timestamp": c.timestamp,
@@ -58,7 +77,23 @@ def calculate_indicators_for_candles(
         "MTF_EMA": _calculate_mtf_ema(df),
     }
 
-    # Store indicator values
+    # Get existing indicator candle IDs in bulk for efficiency
+    existing_indicators = {}
+    if candle_ids:
+        target_candle_ids = candle_ids
+    else:
+        target_candle_ids = [c.id for c in candles_without_indicators] if 'candles_without_indicators' in locals() else [c.id for c in candles]
+
+    if target_candle_ids:
+        existing_records = db.query(IndicatorValue.candle_id, IndicatorValue.strategy).filter(
+            IndicatorValue.candle_id.in_(target_candle_ids)
+        ).all()
+        for candle_id, strategy in existing_records:
+            if candle_id not in existing_indicators:
+                existing_indicators[candle_id] = set()
+            existing_indicators[candle_id].add(strategy)
+
+    # Store indicator values (only for candles that need them)
     stored_count = 0
     for strategy, indicator_df in results.items():
         if indicator_df is None:
@@ -67,15 +102,14 @@ def calculate_indicators_for_candles(
         for _, row in indicator_df.iterrows():
             candle_id = int(row["id"])
 
-            # Check if already exists
-            existing = db.query(IndicatorValue).filter(
-                and_(
-                    IndicatorValue.candle_id == candle_id,
-                    IndicatorValue.strategy == strategy
-                )
-            ).first()
+            # Skip if not in target list
+            if candle_ids and candle_id not in candle_ids:
+                continue
+            if 'candles_without_indicators' in locals() and candle_id not in [c.id for c in candles_without_indicators]:
+                continue
 
-            if existing:
+            # Check if already exists (using in-memory cache)
+            if candle_id in existing_indicators and strategy in existing_indicators[candle_id]:
                 continue
 
             indicator = IndicatorValue(

@@ -32,6 +32,7 @@ BINANCE_RESAMPLE_TIMEFRAMES = {
 
 # Known crypto symbols that should use Binance
 # Format: Yahoo symbol -> Binance symbol
+# Note: You can also use Binance symbols directly (e.g., BTCUSDT, SOLUSDT, ETHUSDT)
 CRYPTO_SYMBOL_MAP = {
     "SOL-USD": "SOLUSDT",
     "BTC-USD": "BTCUSDT",
@@ -63,6 +64,13 @@ CRYPTO_SYMBOL_MAP = {
     "THETA-USD": "THETAUSDT",
     "XTZ-USD": "XTZUSDT",
     "EOS-USD": "EOSUSDT",
+    "BNB-USD": "BNBUSDT",
+    "ARB-USD": "ARBUSDT",
+    "OP-USD": "OPUSDT",
+    "PEPE-USD": "PEPEUSDT",
+    "INJ-USD": "INJUSDT",
+    "SUI-USD": "SUIUSDT",
+    "APT-USD": "APTUSDT",
 }
 
 # Base URL for Binance API
@@ -81,6 +89,12 @@ def is_crypto_symbol(symbol: str) -> bool:
         base = symbol.replace("-USD", "")
         if "." not in base and len(base) <= 6:
             return True
+    # Check if it's a direct Binance format (ends with USDT, USDC, BUSD, etc.)
+    if symbol.endswith("USDT") or symbol.endswith("USDC") or symbol.endswith("BUSD"):
+        return True
+    # Check if it's in the values of CRYPTO_SYMBOL_MAP (reverse lookup)
+    if symbol in CRYPTO_SYMBOL_MAP.values():
+        return True
     return False
 
 
@@ -89,6 +103,9 @@ def get_binance_symbol(yahoo_symbol: str) -> str:
     yahoo_symbol = yahoo_symbol.upper().strip()
     if yahoo_symbol in CRYPTO_SYMBOL_MAP:
         return CRYPTO_SYMBOL_MAP[yahoo_symbol]
+    # If it's already in Binance format (ends with USDT, USDC, BUSD), return as-is
+    if yahoo_symbol.endswith("USDT") or yahoo_symbol.endswith("USDC") or yahoo_symbol.endswith("BUSD"):
+        return yahoo_symbol
     # Try to convert -USD to USDT format
     if yahoo_symbol.endswith("-USD"):
         base = yahoo_symbol.replace("-USD", "")
@@ -162,8 +179,11 @@ def fetch_binance_candles(
             # [0] Open time, [1] Open, [2] High, [3] Low, [4] Close, [5] Volume,
             # [6] Close time, [7] Quote asset volume, [8] Number of trades,
             # [9] Taker buy base volume, [10] Taker buy quote volume, [11] Ignore
+
+            # Use OPEN time for candle timestamp (when the candle starts)
+            # This is better for real-time trading as data is available immediately
             open_time_ms = kline[0]
-            candle_ts = datetime.fromtimestamp(open_time_ms / 1000).replace(microsecond=0)
+            candle_ts = datetime.utcfromtimestamp(open_time_ms / 1000).replace(microsecond=0)
 
             all_candles.append({
                 "timestamp": candle_ts,
@@ -233,8 +253,9 @@ def _fetch_and_resample_binance_candles(
             break
 
         for kline in data:
+            # Use OPEN time for candle timestamp (when the candle starts)
             open_time_ms = kline[0]
-            candle_ts = datetime.fromtimestamp(open_time_ms / 1000).replace(microsecond=0)
+            candle_ts = datetime.utcfromtimestamp(open_time_ms / 1000).replace(microsecond=0)
 
             all_candles.append({
                 "timestamp": candle_ts,
