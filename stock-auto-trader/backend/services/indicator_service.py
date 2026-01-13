@@ -75,6 +75,7 @@ def calculate_indicators_for_candles(
         "MA_CROSSOVER": _calculate_ma_crossover(df),
         "BOLLINGER": _calculate_bollinger(df),
         "MTF_EMA": _calculate_mtf_ema(df),
+        "MTF_LUXALGO_5TH": _calculate_mtf_luxalgo_5th(df),
     }
 
     # Get existing indicator candle IDs in bulk for efficiency
@@ -141,6 +142,43 @@ def calculate_indicators_for_candles(
                 ema_300=row.get("ema_300"),
                 bullish_count=row.get("bullish_count"),
                 bearish_count=row.get("bearish_count"),
+                # MTF_LUXALGO_5TH
+                volatility_score=row.get("volatility_score"),
+                internal_length=row.get("internal_length"),
+                swing_length=row.get("swing_length"),
+                market_structure=row.get("market_structure"),
+                trend=row.get("trend"),
+                pattern_sequence=row.get("pattern_sequence"),
+                pivot_internal_high=row.get("pivot_internal_high"),
+                pivot_swing_high=row.get("pivot_swing_high"),
+                pivot_internal_low=row.get("pivot_internal_low"),
+                pivot_swing_low=row.get("pivot_swing_low"),
+                last_swing_high=row.get("last_swing_high"),
+                last_swing_low=row.get("last_swing_low"),
+                # Order Blocks
+                ob_bull_top=row.get("ob_bull_top"),
+                ob_bull_btm=row.get("ob_bull_btm"),
+                ob_bull_avg=row.get("ob_bull_avg"),
+                ob_bull_volume=row.get("ob_bull_volume"),
+                ob_bull_time=row.get("ob_bull_time"),
+                ob_bull_mitigated=row.get("ob_bull_mitigated", False),
+                ob_bear_top=row.get("ob_bear_top"),
+                ob_bear_btm=row.get("ob_bear_btm"),
+                ob_bear_avg=row.get("ob_bear_avg"),
+                ob_bear_volume=row.get("ob_bear_volume"),
+                ob_bear_time=row.get("ob_bear_time"),
+                ob_bear_mitigated=row.get("ob_bear_mitigated", False),
+                # FVG
+                fvg_bull_top=row.get("fvg_bull_top"),
+                fvg_bull_btm=row.get("fvg_bull_btm"),
+                fvg_bull_avg=row.get("fvg_bull_avg"),
+                fvg_bull_time=row.get("fvg_bull_time"),
+                fvg_bull_mitigated=row.get("fvg_bull_mitigated", False),
+                fvg_bear_top=row.get("fvg_bear_top"),
+                fvg_bear_btm=row.get("fvg_bear_btm"),
+                fvg_bear_avg=row.get("fvg_bear_avg"),
+                fvg_bear_time=row.get("fvg_bear_time"),
+                fvg_bear_mitigated=row.get("fvg_bear_mitigated", False),
             )
             db.add(indicator)
             stored_count += 1
@@ -310,3 +348,57 @@ def _calculate_mtf_ema(df: pd.DataFrame) -> pd.DataFrame:
         result["strength"] = 50
 
     return result.iloc[min_required:]
+
+
+def _calculate_mtf_luxalgo_5th(df: pd.DataFrame) -> pd.DataFrame:
+    """Calculate MTF LuxAlgo 5th indicators incrementally for each candle"""
+    from strategies.mtf_luxalgo_5th import MTFLuxAlgo5thStrategy
+
+    if len(df) < 100:
+        return None
+
+    # Initialize strategy
+    strategy = MTFLuxAlgo5thStrategy()
+
+    # Prepare result dataframe
+    result = df.copy()
+    result["signal"] = "HOLD"
+    result["strength"] = 50
+    result["volatility_score"] = None
+    result["internal_length"] = None
+    result["swing_length"] = None
+    result["market_structure"] = None
+    result["trend"] = None
+    result["pattern_sequence"] = None
+    result["pivot_internal_high"] = None
+    result["pivot_swing_high"] = None
+    result["pivot_internal_low"] = None
+    result["pivot_swing_low"] = None
+    result["last_swing_high"] = None
+    result["last_swing_low"] = None
+
+    # Calculate incrementally for each candle
+    for i in range(100, len(df) + 1):
+        df_subset = df.iloc[:i]
+        calc_result = strategy.calculate(df_subset)
+
+        if calc_result and "indicators" in calc_result:
+            ind = calc_result["indicators"]
+            idx = i - 1
+
+            result.at[idx, "signal"] = calc_result.get("signal", "HOLD")
+            result.at[idx, "strength"] = calc_result.get("strength", 50)
+            result.at[idx, "volatility_score"] = ind.get("volatility_score")
+            result.at[idx, "internal_length"] = ind.get("internal_length")
+            result.at[idx, "swing_length"] = ind.get("swing_length")
+            result.at[idx, "market_structure"] = ind.get("market_structure")
+            result.at[idx, "trend"] = ind.get("trend")
+            result.at[idx, "pattern_sequence"] = ind.get("pattern_sequence")
+            result.at[idx, "pivot_internal_high"] = ind.get("pivot_internal_high")
+            result.at[idx, "pivot_swing_high"] = ind.get("pivot_swing_high")
+            result.at[idx, "pivot_internal_low"] = ind.get("pivot_internal_low")
+            result.at[idx, "pivot_swing_low"] = ind.get("pivot_swing_low")
+            result.at[idx, "last_swing_high"] = ind.get("last_swing_high")
+            result.at[idx, "last_swing_low"] = ind.get("last_swing_low")
+
+    return result.iloc[100:]

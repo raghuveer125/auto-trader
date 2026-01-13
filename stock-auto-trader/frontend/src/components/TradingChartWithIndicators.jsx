@@ -277,6 +277,169 @@ const TradingChartWithIndicators = ({
         if (lowerData.length > 0) lowerBandSeries.setData(lowerData);
       }
 
+      // MTF_LUXALGO_5TH - Add swing high/low markers and Order Blocks
+      if (strategyName === 'MTF_LUXALGO_5TH') {
+        // Add markers for swing pivots
+        const markers = [];
+
+        // Add swing high marker if available
+        if (indicators.pivot_swing_high && indicators.last_swing_high) {
+          const lastTime = formattedData[formattedData.length - 1]?.time;
+          if (lastTime) {
+            markers.push({
+              time: lastTime,
+              position: 'aboveBar',
+              color: '#ef4444',
+              shape: 'arrowDown',
+              text: `sH: ${indicators.last_swing_high.toFixed(2)}`,
+            });
+          }
+        }
+
+        // Add swing low marker if available
+        if (indicators.pivot_swing_low && indicators.last_swing_low) {
+          const lastTime = formattedData[formattedData.length - 1]?.time;
+          if (lastTime) {
+            markers.push({
+              time: lastTime,
+              position: 'belowBar',
+              color: '#10b981',
+              shape: 'arrowUp',
+              text: `sL: ${indicators.last_swing_low.toFixed(2)}`,
+            });
+          }
+        }
+
+        if (markers.length > 0) {
+          candlestickSeries.setMarkers(markers);
+        }
+
+        // Draw Order Blocks as rectangles
+        if (indicators.order_blocks) {
+          const { bullish = [], bearish = [] } = indicators.order_blocks;
+
+          // Draw bullish OBs (demand zones) - green
+          bullish.forEach((ob, idx) => {
+            if (!ob.mitigated && ob.btm && ob.top) {
+              const obSeries = priceChart.addLineSeries({
+                color: 'rgba(16, 185, 129, 0.2)',
+                lineWidth: 0,
+                priceLineVisible: false,
+                lastValueVisible: false,
+              });
+
+              // Create filled area
+              const obData = formattedData.map(d => ({
+                time: d.time,
+                value: (ob.top + ob.btm) / 2,
+              }));
+
+              obSeries.setData(obData);
+              obSeries.createPriceLine({
+                price: ob.top,
+                color: '#10b981',
+                lineWidth: 1,
+                lineStyle: 2,
+                axisLabelVisible: false,
+              });
+              obSeries.createPriceLine({
+                price: ob.btm,
+                color: '#10b981',
+                lineWidth: 1,
+                lineStyle: 2,
+                axisLabelVisible: false,
+              });
+            }
+          });
+
+          // Draw bearish OBs (supply zones) - red
+          bearish.forEach((ob, idx) => {
+            if (!ob.mitigated && ob.btm && ob.top) {
+              const obSeries = priceChart.addLineSeries({
+                color: 'rgba(239, 68, 68, 0.2)',
+                lineWidth: 0,
+                priceLineVisible: false,
+                lastValueVisible: false,
+              });
+
+              obSeries.createPriceLine({
+                price: ob.top,
+                color: '#ef4444',
+                lineWidth: 1,
+                lineStyle: 2,
+                axisLabelVisible: false,
+              });
+              obSeries.createPriceLine({
+                price: ob.btm,
+                color: '#ef4444',
+                lineWidth: 1,
+                lineStyle: 2,
+                axisLabelVisible: false,
+              });
+            }
+          });
+        }
+
+        // Draw FVGs as shaded areas
+        if (indicators.fvgs) {
+          const { bullish = [], bearish = [] } = indicators.fvgs;
+
+          // Draw bullish FVGs - blue
+          bullish.forEach((fvg) => {
+            if (!fvg.mitigated && fvg.btm && fvg.top) {
+              const fvgSeries = priceChart.addLineSeries({
+                color: 'rgba(59, 130, 246, 0.15)',
+                lineWidth: 0,
+                priceLineVisible: false,
+                lastValueVisible: false,
+              });
+
+              fvgSeries.createPriceLine({
+                price: fvg.top,
+                color: '#3b82f6',
+                lineWidth: 1,
+                lineStyle: 3,
+                axisLabelVisible: false,
+              });
+              fvgSeries.createPriceLine({
+                price: fvg.btm,
+                color: '#3b82f6',
+                lineWidth: 1,
+                lineStyle: 3,
+                axisLabelVisible: false,
+              });
+            }
+          });
+
+          // Draw bearish FVGs - orange
+          bearish.forEach((fvg) => {
+            if (!fvg.mitigated && fvg.btm && fvg.top) {
+              const fvgSeries = priceChart.addLineSeries({
+                color: 'rgba(251, 146, 60, 0.15)',
+                lineWidth: 0,
+                priceLineVisible: false,
+                lastValueVisible: false,
+              });
+
+              fvgSeries.createPriceLine({
+                price: fvg.top,
+                color: '#fb923c',
+                lineWidth: 1,
+                lineStyle: 3,
+                axisLabelVisible: false,
+              });
+              fvgSeries.createPriceLine({
+                price: fvg.btm,
+                color: '#fb923c',
+                lineWidth: 1,
+                lineStyle: 3,
+                axisLabelVisible: false,
+              });
+            }
+          });
+        }
+      }
+
       // MTF_EMA - 7 EMA lines calculated from current timeframe candle data
       if (strategyName === 'MTF_EMA') {
         try {

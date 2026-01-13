@@ -1,0 +1,303 @@
+.luxalgo-dashboard {
+  background: rgba(20, 25, 35, 0.98);
+  border: 1px solid rgba(100, 116, 139, 0.3);
+  border-radius: 6px;
+  padding: 10px;
+  min-width: 320px;
+  max-width: 380px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
+  font-size: 11px;
+  color: #94a3b8;
+  user-select: none;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', sans-serif;
+}
+
+.luxalgo-dashboard.draggable {
+  position: absolute;
+  z-index: 1000;
+}
+
+.luxalgo-dashboard-drag-handle {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  padding: 4px;
+  margin-bottom: 8px;
+  border-bottom: 1px solid rgba(100, 116, 139, 0.2);
+  color: #64748b;
+  cursor: grab;
+}
+
+.luxalgo-dashboard-drag-handle:active {
+  cursor: grabbing;
+}
+
+.luxalgo-dashboard-content {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.luxalgo-section {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 6px 0;
+  border-bottom: 1px solid rgba(100, 116, 139, 0.15);
+}
+
+.luxalgo-section:last-child {
+  border-bottom: none;
+}
+
+/* Multi-Timeframe Table */
+.luxalgo-mtf-table {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  background: rgba(100, 116, 139, 0.1);
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+.luxalgo-mtf-header {
+  display: grid;
+  grid-template-columns: 40px 1fr 1fr;
+  background: rgba(30, 41, 59, 0.8);
+  font-weight: 600;
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.luxalgo-mtf-row {
+  display: grid;
+  grid-template-columns: 40px 1fr 1fr;
+  background: rgba(15, 23, 42, 0.6);
+}
+
+.luxalgo-mtf-cell {
+  padding: 5px 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 10px;
+  border-right: 1px solid rgba(100, 116, 139, 0.1);
+}
+
+.luxalgo-mtf-cell:last-child {
+  border-right: none;
+}
+
+.luxalgo-mtf-cell.header-cell {
+  color: #64748b;
+  font-weight: 600;
+}
+
+.luxalgo-mtf-cell.tf-label {
+  color: #94a3b8;
+  font-weight: 500;
+  justify-content: flex-start;
+}
+
+.luxalgo-mtf-cell.trend-cell {
+  font-weight: 600;
+  font-size: 9px;
+  letter-spacing: 0.3px;
+}
+
+.luxalgo-mtf-cell.trend-cell.bullish {
+  background: rgba(16, 185, 129, 0.15);
+  color: #10b981;
+}
+
+.luxalgo-mtf-cell.trend-cell.bearish {
+  background: rgba(239, 68, 68, 0.15);
+  color: #ef4444;
+}
+
+.luxalgo-mtf-cell.trend-cell.neutral {
+  color: #64748b;
+}
+
+.luxalgo-mtf-cell.pattern-cell {
+  color: #cbd5e1;
+  font-size: 10px;
+  justify-content: flex-start;
+  gap: 4px;
+}
+
+.pattern-icon {
+  font-size: 12px;
+  opacity: 0.7;
+}
+
+/* Info Rows */
+.luxalgo-info-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 4px 6px;
+  background: rgba(30, 41, 59, 0.3);
+  border-radius: 3px;
+  min-height: 24px;
+}
+
+.luxalgo-label {
+  font-size: 10px;
+  color: #64748b;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+}
+
+.luxalgo-value {
+  font-size: 11px;
+  font-weight: 600;
+  color: #cbd5e1;
+  text-align: right;
+}
+
+.luxalgo-value.bullish {
+  color: #10b981;
+}
+
+.luxalgo-value.bearish {
+  color: #ef4444;
+}
+
+.luxalgo-value.neutral {
+  color: #94a3b8;
+}
+
+.luxalgo-value.highlight {
+  background: rgba(234, 179, 8, 0.2);
+  color: #fbbf24;
+  padding: 2px 6px;
+  border-radius: 3px;
+}
+
+.luxalgo-value.zone-bias {
+  padding: 2px 8px;
+  border-radius: 3px;
+  font-size: 10px;
+}
+
+.luxalgo-value.zone-bias.neutral {
+  background: rgba(100, 116, 139, 0.3);
+  color: #94a3b8;
+}
+
+.luxalgo-value.zone-bias.bullish {
+  background: rgba(16, 185, 129, 0.2);
+  color: #10b981;
+}
+
+.luxalgo-value.zone-bias.bearish {
+  background: rgba(239, 68, 68, 0.2);
+  color: #ef4444;
+}
+
+.luxalgo-value.trade-mode {
+  padding: 2px 8px;
+  border-radius: 3px;
+  font-size: 10px;
+  font-weight: 700;
+}
+
+.luxalgo-value.trade-mode.wait {
+  background: rgba(100, 116, 139, 0.3);
+  color: #94a3b8;
+}
+
+.luxalgo-value.trade-mode.scalp {
+  background: rgba(16, 185, 129, 0.2);
+  color: #10b981;
+}
+
+.luxalgo-value.trade-mode.intraday {
+  background: rgba(59, 130, 246, 0.2);
+  color: #3b82f6;
+}
+
+.luxalgo-value.trade-mode.swing {
+  background: rgba(168, 85, 247, 0.2);
+  color: #a855f7;
+}
+
+/* Confidence Meter */
+.luxalgo-confidence-section {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 6px;
+  background: rgba(30, 41, 59, 0.4);
+  border-radius: 4px;
+}
+
+.luxalgo-confidence-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.luxalgo-confidence-value {
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.luxalgo-confidence-value.high {
+  color: #10b981;
+}
+
+.luxalgo-confidence-value.medium {
+  color: #fbbf24;
+}
+
+.luxalgo-confidence-value.low {
+  color: #ef4444;
+}
+
+.luxalgo-confidence-bar {
+  width: 100%;
+  height: 8px;
+  background: rgba(100, 116, 139, 0.2);
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+.luxalgo-confidence-fill {
+  height: 100%;
+  transition: width 0.3s ease;
+  border-radius: 4px;
+}
+
+.luxalgo-confidence-fill.high {
+  background: linear-gradient(90deg, #10b981, #059669);
+}
+
+.luxalgo-confidence-fill.medium {
+  background: linear-gradient(90deg, #fbbf24, #f59e0b);
+}
+
+.luxalgo-confidence-fill.low {
+  background: linear-gradient(90deg, #ef4444, #dc2626);
+}
+
+/* Responsive adjustments */
+@media (max-width: 768px) {
+  .luxalgo-dashboard {
+    min-width: 280px;
+    font-size: 10px;
+  }
+
+  .luxalgo-label,
+  .luxalgo-value {
+    font-size: 10px;
+  }
+
+  .luxalgo-mtf-cell {
+    font-size: 9px;
+    padding: 4px 6px;
+  }
+}

@@ -37,6 +37,7 @@ class StrategyType(enum.Enum):
     MA_CROSSOVER = "MA_CROSSOVER"
     BOLLINGER = "BOLLINGER"
     MTF_EMA = "MTF_EMA"
+    MTF_LUXALGO_5TH = "MTF_LUXALGO_5TH"
     MANUAL = "MANUAL"
 
 
@@ -161,6 +162,48 @@ class IndicatorValue(Base):
     ema_300 = Column(Float)
     bullish_count = Column(Integer)
     bearish_count = Column(Integer)
+
+    # MTF_LUXALGO_5TH specific
+    volatility_score = Column(Float)
+    internal_length = Column(Integer)
+    swing_length = Column(Integer)
+    market_structure = Column(String(10))  # HH, HL, LH, LL, None
+    trend = Column(String(10))  # Bullish, Bearish, Neutral
+    pattern_sequence = Column(String(100))  # e.g., "HH → HL → HH"
+    pivot_internal_high = Column(Float)
+    pivot_swing_high = Column(Float)
+    pivot_internal_low = Column(Float)
+    pivot_swing_low = Column(Float)
+    last_swing_high = Column(Float)
+    last_swing_low = Column(Float)
+
+    # Order Blocks (Demand/Supply Zones)
+    ob_bull_top = Column(Float)  # Bullish OB upper boundary
+    ob_bull_btm = Column(Float)  # Bullish OB lower boundary
+    ob_bull_avg = Column(Float)  # Bullish OB middle line
+    ob_bull_volume = Column(Float)  # Bullish OB volume
+    ob_bull_time = Column(DateTime)  # When bullish OB was created
+    ob_bull_mitigated = Column(Boolean, default=False)  # Has price returned to bull OB?
+
+    ob_bear_top = Column(Float)  # Bearish OB upper boundary
+    ob_bear_btm = Column(Float)  # Bearish OB lower boundary
+    ob_bear_avg = Column(Float)  # Bearish OB middle line
+    ob_bear_volume = Column(Float)  # Bearish OB volume
+    ob_bear_time = Column(DateTime)  # When bearish OB was created
+    ob_bear_mitigated = Column(Boolean, default=False)  # Has price returned to bear OB?
+
+    # Fair Value Gaps (FVG) - Latest bullish and bearish
+    fvg_bull_top = Column(Float)  # Bullish FVG upper boundary
+    fvg_bull_btm = Column(Float)  # Bullish FVG lower boundary
+    fvg_bull_avg = Column(Float)  # Bullish FVG middle line
+    fvg_bull_time = Column(DateTime)  # When bullish FVG was created
+    fvg_bull_mitigated = Column(Boolean, default=False)  # Has FVG been filled?
+
+    fvg_bear_top = Column(Float)  # Bearish FVG upper boundary
+    fvg_bear_btm = Column(Float)  # Bearish FVG lower boundary
+    fvg_bear_avg = Column(Float)  # Bearish FVG middle line
+    fvg_bear_time = Column(DateTime)  # When bearish FVG was created
+    fvg_bear_mitigated = Column(Boolean, default=False)  # Has FVG been filled?
 
     created_at = Column(DateTime, default=datetime.utcnow)
 

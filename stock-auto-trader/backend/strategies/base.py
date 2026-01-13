@@ -1,7 +1,38 @@
 from enum import Enum
-from typing import Dict, Optional
+from typing import Dict, Optional, Any
 from abc import ABC, abstractmethod
 import pandas as pd
+import numpy as np
+
+
+def to_python_type(obj: Any) -> Any:
+    """
+    Recursively convert numpy/pandas types to Python native types for JSON serialization.
+
+    Args:
+        obj: Any object that might contain numpy/pandas types
+
+    Returns:
+        Object with all numpy/pandas types converted to Python native types
+    """
+    if isinstance(obj, (np.integer, np.int64, np.int32, np.int16, np.int8)):
+        return int(obj)
+    elif isinstance(obj, (np.floating, np.float64, np.float32, np.float16)):
+        return float(obj)
+    elif isinstance(obj, np.ndarray):
+        return obj.tolist()
+    elif isinstance(obj, (pd.Series, pd.Index)):
+        return obj.tolist()
+    elif isinstance(obj, dict):
+        return {key: to_python_type(value) for key, value in obj.items()}
+    elif isinstance(obj, (list, tuple)):
+        return [to_python_type(item) for item in obj]
+    elif isinstance(obj, np.bool_):
+        return bool(obj)
+    elif pd.isna(obj):
+        return None
+    else:
+        return obj
 
 
 class Signal(Enum):
@@ -56,10 +87,16 @@ class BaseStrategy(ABC):
         Returns:
             Formatted result dict
         """
+        # Convert strength to Python int (in case it's numpy.int64)
+        strength_value = int(max(0, min(100, strength)))
+
+        # Convert all numpy/pandas types in indicators to Python native types
+        clean_indicators = to_python_type(indicators or {})
+
         return {
             "strategy": self.name,
             "signal": signal.value,
-            "strength": max(0, min(100, strength)),  # Clamp to 0-100
+            "strength": strength_value,
             "reason": reason,
-            "indicators": indicators or {}
+            "indicators": clean_indicators
         }

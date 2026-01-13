@@ -2,6 +2,7 @@ import { ChevronDown, Maximize2, Minus, RefreshCw, TrendingDown, TrendingUp } fr
 import { Component, useEffect, useRef, useState } from 'react';
 import { candlesAPI, indicatorsAPI, signalsAPI } from '../services/api';
 import ChartModal from './ChartModal';
+import LuxAlgoDashboard from './LuxAlgoDashboard';
 import MTFDashboard from './MTFDashboard';
 import PaperTradingPanel from './PaperTradingPanel';
 import './StrategyCard.css';
@@ -213,6 +214,26 @@ const StrategyCard = ({ strategy, signal: initialSignal, candles: initialCandles
               } catch (mtfError) {
                 console.log('Could not fetch MTF dashboard:', mtfError.message);
               }
+            } else if (strategy === 'MTF_LUXALGO_5TH') {
+              // MTF LuxAlgo 5th - Add pivot and market structure data
+              chartIndicators.close_line = strategyIndicators.close_line || [];
+              chartIndicators.high_line = strategyIndicators.high_line || [];
+              chartIndicators.low_line = strategyIndicators.low_line || [];
+
+              // Add scalar values for display
+              chartIndicators.price = price;
+              chartIndicators.volatility_score = strategyIndicators.volatility_score?.[lastIdx];
+              chartIndicators.internal_length = strategyIndicators.internal_length?.[lastIdx];
+              chartIndicators.swing_length = strategyIndicators.swing_length?.[lastIdx];
+              chartIndicators.market_structure = strategyIndicators.market_structure?.[lastIdx];
+              chartIndicators.trend = strategyIndicators.trend?.[lastIdx];
+              chartIndicators.pattern_sequence = strategyIndicators.pattern_sequence?.[lastIdx];
+              chartIndicators.pivot_internal_high = strategyIndicators.pivot_internal_high?.[lastIdx];
+              chartIndicators.pivot_swing_high = strategyIndicators.pivot_swing_high?.[lastIdx];
+              chartIndicators.pivot_internal_low = strategyIndicators.pivot_internal_low?.[lastIdx];
+              chartIndicators.pivot_swing_low = strategyIndicators.pivot_swing_low?.[lastIdx];
+              chartIndicators.last_swing_high = strategyIndicators.last_swing_high?.[lastIdx];
+              chartIndicators.last_swing_low = strategyIndicators.last_swing_low?.[lastIdx];
             }
 
             setChartSignal({
@@ -455,7 +476,15 @@ const StrategyCard = ({ strategy, signal: initialSignal, candles: initialCandles
             />
           )}
 
-          {displaySignal?.indicators && Object.keys(displaySignal.indicators).length > 0 && strategy !== 'MTF_EMA' && (
+          {/* LuxAlgo Dashboard for MTF_LUXALGO_5TH */}
+          {strategy === 'MTF_LUXALGO_5TH' && displaySignal?.indicators && (
+            <LuxAlgoDashboard
+              indicators={displaySignal.indicators}
+              draggable={false}
+            />
+          )}
+
+          {displaySignal?.indicators && Object.keys(displaySignal.indicators).length > 0 && strategy !== 'MTF_EMA' && strategy !== 'MTF_LUXALGO_5TH' && (
             <div className="indicators-section">
               <h4>Indicators</h4>
               <div className="indicators-grid">

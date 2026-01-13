@@ -1,10 +1,11 @@
-import { useEffect, useState, useRef, useCallback } from 'react';
+import { ChevronDown, Maximize2, RefreshCw, X } from 'lucide-react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { X, Maximize2, RefreshCw, ChevronDown } from 'lucide-react';
-import TradingChartWithIndicators from './TradingChartWithIndicators';
-import MTFDashboard from './MTFDashboard';
 import { candlesAPI, indicatorsAPI, signalsAPI } from '../services/api';
 import './ChartModal.css';
+import LuxAlgoDashboard from './LuxAlgoDashboard';
+import MTFDashboard from './MTFDashboard';
+import TradingChartWithIndicators from './TradingChartWithIndicators';
 
 const TIMEFRAMES = [
   { value: '1m', label: '1 Minute' },
@@ -361,6 +362,17 @@ const ChartModal = ({ isOpen, onClose, strategy, signal, candles: initialCandles
                 emaTrends={chartSignal.indicators.ema_trends || null}
                 currentTimeframe={selectedTimeframe}
                 draggable={true}
+              />
+            </div>
+          )}
+
+          {/* LuxAlgo Dashboard for MTF_LUXALGO_5TH strategy */}
+          {strategy === 'MTF_LUXALGO_5TH' && chartSignal?.indicators && (
+            <div className="mtf-dashboard-modal-overlay">
+              <LuxAlgoDashboard
+                indicators={chartSignal.indicators}
+                draggable={true}
+                initialPosition={{ x: 20, y: 20 }}
               />
             </div>
           )}

@@ -1,6 +1,6 @@
+import { Info, Loader2, Settings, X } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { X, Settings, Info, Loader2 } from 'lucide-react';
 import { strategySettingsAPI } from '../services/api';
 import './StrategySettingsModal.css';
 
@@ -36,6 +36,38 @@ const StrategySettingsModal = ({ isOpen, onClose, strategy, onSave }) => {
     BOLLINGER: {
       period: { value: 20, label: 'Period', min: 10, max: 50, description: 'Bollinger Bands period' },
       std_dev: { value: 2, label: 'Standard Deviation', min: 1, max: 4, step: 0.5, description: 'Number of standard deviations' },
+    },
+    MTF_LUXALGO_5TH: {
+      swing_length: { value: 10, label: 'Swing Length', min: 5, max: 50, description: 'Pivot detection length' },
+      ob_num: { value: 5, label: 'Order Blocks', min: 1, max: 10, description: 'Max Order Blocks to track' },
+      ob_mitigation: {
+        value: 'Close',
+        label: 'OB Mitigation',
+        type: 'select',
+        options: ['Close', 'Wick'],
+        description: 'Order Block mitigation method'
+      },
+      fvg_num: { value: 5, label: 'FVG Count', min: 1, max: 10, description: 'Max Fair Value Gaps to track' },
+      fvg_src: {
+        value: 'Wick',
+        label: 'FVG Source',
+        type: 'select',
+        options: ['Wick', 'Close'],
+        description: 'FVG detection source'
+      },
+      show_acc_dist_zone: {
+        value: true,
+        label: 'Show Zones',
+        type: 'checkbox',
+        description: 'Show Accumulation/Distribution zones'
+      },
+      zone_mode: {
+        value: 'Fast',
+        label: 'Zone Mode',
+        type: 'select',
+        options: ['Fast', 'Slow'],
+        description: 'Zone detection speed'
+      },
     },
   };
 
@@ -171,6 +203,17 @@ const StrategySettingsModal = ({ isOpen, onClose, strategy, onSave }) => {
                         <option key={option} value={option}>{option}</option>
                       ))}
                     </select>
+                  ) : config.type === 'checkbox' ? (
+                    <label className="setting-checkbox-container">
+                      <input
+                        type="checkbox"
+                        id={key}
+                        checked={settings[key] !== undefined ? settings[key] : config.value}
+                        onChange={(e) => handleChange(key, e.target.checked)}
+                        className="setting-checkbox"
+                      />
+                      <span className="checkbox-label">Enable</span>
+                    </label>
                   ) : (
                     <input
                       type="range"
