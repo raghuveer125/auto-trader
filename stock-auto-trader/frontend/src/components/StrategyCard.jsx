@@ -48,15 +48,17 @@ class StrategyCardErrorBoundary extends Component {
 const TIMEFRAMES = [
   { value: '1m', label: '1m' },
   { value: '5m', label: '5m' },
+  { value: '15m', label: '15m' },
+  { value: '30m', label: '30m' },
   { value: '1h', label: '1h' },
   { value: '1d', label: '1d' },
 ];
 
-const StrategyCard = ({ strategy, signal: initialSignal, candles: initialCandles, trades = [], symbol, globalTimeframe = '1d', onTradeExecuted }) => {
+const StrategyCard = ({ strategy, signal: initialSignal, candles: initialCandles, trades = [], symbol, globalTimeframe = '5m', onTradeExecuted }) => {
   const [isModalOpen, setIsModalOpen] = useState(false);
 
   // Timeframe state
-  const [selectedTimeframe, setSelectedTimeframe] = useState('1d');
+  const [selectedTimeframe, setSelectedTimeframe] = useState('5m');
   const [chartCandles, setChartCandles] = useState(initialCandles || []);
   const [chartSignal, setChartSignal] = useState(initialSignal || null);
   const [loading, setLoading] = useState(false);
@@ -77,7 +79,7 @@ const StrategyCard = ({ strategy, signal: initialSignal, candles: initialCandles
   useEffect(() => {
     if (globalTimeframe !== selectedTimeframe) {
       setSelectedTimeframe(globalTimeframe);
-      if (globalTimeframe !== '1d') {
+      if (globalTimeframe !== '5m') {
         fetchCandlesForTimeframe(globalTimeframe);
       } else {
         setChartCandles(initialCandles);
@@ -202,7 +204,7 @@ const StrategyCard = ({ strategy, signal: initialSignal, candles: initialCandles
 
               // Fetch full MTF dashboard from signals API (contains all timeframes)
               try {
-                const mtfSignalsRes = await signalsAPI.get(symbol, '1d', 'MTF_EMA');
+                const mtfSignalsRes = await signalsAPI.get(symbol, '5m', 'MTF_EMA');
                 const mtfSignals = mtfSignalsRes.data.signals || [];
                 const mtfSignal = mtfSignals.find(s => s.strategy === 'MTF_EMA');
                 if (mtfSignal?.indicators?.trend_dashboard) {
@@ -296,7 +298,7 @@ const StrategyCard = ({ strategy, signal: initialSignal, candles: initialCandles
   const handleTimeframeChange = (timeframe) => {
     setSelectedTimeframe(timeframe);
     setDropdownOpen(false);
-    if (timeframe !== '1d') {
+    if (timeframe !== '5m') {
       fetchCandlesForTimeframe(timeframe);
     } else {
       // Reset to initial data for 1d

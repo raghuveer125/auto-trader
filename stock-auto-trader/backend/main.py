@@ -242,7 +242,7 @@ def get_candles(
 
 
 @app.get("/candles/{symbol}/latest", tags=["Candles"])
-def get_latest_candle(symbol: str, timeframe: str = "1d", db: Session = Depends(get_db)):
+def get_latest_candle(symbol: str, timeframe: str = "5m", db: Session = Depends(get_db)):
     """Get the latest candle timestamp for incremental sync"""
     stock = db.query(Stock).filter(Stock.symbol == symbol.upper()).first()
     if not stock:

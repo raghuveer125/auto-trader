@@ -19,7 +19,7 @@ const Dashboard = () => {
   const [loading, setLoading] = useState(true);
   const [syncing, setSyncing] = useState(false);
   const [error, setError] = useState(null);
-  const [globalTimeframe, setGlobalTimeframe] = useState('1d');
+  const [globalTimeframe, setGlobalTimeframe] = useState('5m');
   const [timeframeDropdownOpen, setTimeframeDropdownOpen] = useState(false);
 
   // Fetch initial data
@@ -79,7 +79,7 @@ const Dashboard = () => {
         setCandles(candlesRes.data);
 
         // Fetch signals for all strategies
-        const signalsRes = await signalsAPI.get(selectedStock, '1d');
+        const signalsRes = await signalsAPI.get(selectedStock, '5m');
         console.log('✅ Signals loaded:', signalsRes.data);
         setSignals(signalsRes.data.signals || []);
 
@@ -110,10 +110,10 @@ const Dashboard = () => {
       await candlesAPI.sync(selectedStock, null, false);
 
       // Refetch candles and signals
-      const candlesRes = await candlesAPI.get(selectedStock, '1d', 100);
+      const candlesRes = await candlesAPI.get(selectedStock, '5m', 100);
       setCandles(candlesRes.data);
 
-      const signalsRes = await signalsAPI.get(selectedStock, '1d');
+      const signalsRes = await signalsAPI.get(selectedStock, '5m');
       setSignals(signalsRes.data.signals || []);
 
       setSyncing(false);
@@ -158,7 +158,7 @@ const Dashboard = () => {
 
     try {
       console.log(`🔄 Refreshing signals after ${strategyName} settings saved...`);
-      const signalsRes = await signalsAPI.get(selectedStock, '1d');
+      const signalsRes = await signalsAPI.get(selectedStock, '5m');
       console.log('✅ Signals refreshed:', signalsRes.data);
       setSignals(signalsRes.data.signals || []);
     } catch (error) {
@@ -263,7 +263,7 @@ const Dashboard = () => {
             </button>
             {timeframeDropdownOpen && (
               <div className="timeframe-dropdown-menu">
-                {['1m', '5m', '1h', '1d'].map((tf) => (
+                {['1m', '5m', '15m', '30m', '1h', '1d'].map((tf) => (
                   <button
                     key={tf}
                     className={`timeframe-option ${globalTimeframe === tf ? 'active' : ''}`}

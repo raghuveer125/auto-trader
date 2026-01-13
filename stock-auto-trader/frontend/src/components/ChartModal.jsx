@@ -10,6 +10,8 @@ import TradingChartWithIndicators from './TradingChartWithIndicators';
 const TIMEFRAMES = [
   { value: '1m', label: '1 Minute' },
   { value: '5m', label: '5 Minutes' },
+  { value: '15m', label: '15 Minutes' },
+  { value: '30m', label: '30 Minutes' },
   { value: '1h', label: '1 Hour' },
   { value: '1d', label: '1 Day' },
 ];
@@ -19,7 +21,7 @@ const ChartModal = ({ isOpen, onClose, strategy, signal, candles: initialCandles
   const chartBodyRef = useRef(null);
 
   // Timeframe state
-  const [selectedTimeframe, setSelectedTimeframe] = useState('1d');
+  const [selectedTimeframe, setSelectedTimeframe] = useState('5m');
   const [chartCandles, setChartCandles] = useState(initialCandles);
   const [chartSignal, setChartSignal] = useState(signal);
   const [loading, setLoading] = useState(false);
@@ -139,7 +141,7 @@ const ChartModal = ({ isOpen, onClose, strategy, signal, candles: initialCandles
 
               // Fetch full MTF dashboard from signals API (contains all timeframes)
               try {
-                const mtfSignalsRes = await signalsAPI.get(symbol, '1d', 'MTF_EMA');
+                const mtfSignalsRes = await signalsAPI.get(symbol, '5m', 'MTF_EMA');
                 const mtfSignals = mtfSignalsRes.data.signals || [];
                 const mtfSignal = mtfSignals.find(s => s.strategy === 'MTF_EMA');
                 if (mtfSignal?.indicators?.trend_dashboard) {
@@ -222,7 +224,7 @@ const ChartModal = ({ isOpen, onClose, strategy, signal, candles: initialCandles
   const handleTimeframeChange = (timeframe) => {
     setSelectedTimeframe(timeframe);
     setDropdownOpen(false);
-    if (timeframe !== '1d') {
+    if (timeframe !== '5m') {
       fetchCandlesForTimeframe(timeframe);
     } else {
       // Reset to initial data for 1d
@@ -234,7 +236,7 @@ const ChartModal = ({ isOpen, onClose, strategy, signal, candles: initialCandles
   // Reset state when modal opens
   useEffect(() => {
     if (isOpen) {
-      setSelectedTimeframe('1d');
+      setSelectedTimeframe('5m');
       setChartCandles(initialCandles);
       setChartSignal(signal);
     }
