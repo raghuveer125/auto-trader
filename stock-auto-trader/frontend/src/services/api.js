@@ -49,6 +49,9 @@ export const signalsAPI = {
 export const indicatorsAPI = {
   get: (symbol, timeframe = '1d', strategy = null, limit = 500) =>
     api.get(`/indicators/${symbol}`, { params: { timeframe, strategy, limit } }),
+  // Calculate indicators for existing candles (doesn't sync data)
+  calculate: (symbol, timeframe = '1d') =>
+    api.post(`/indicators/${symbol}/calculate`, null, { params: { timeframe } }),
 };
 
 // Strategy Settings API

@@ -367,6 +367,42 @@ def get_candle_sync_status(symbol: str, db: Session = Depends(get_db)):
     return get_sync_status(db, symbol)
 
 
+@app.post("/indicators/{symbol}/calculate", tags=["Indicators"])
+def calculate_indicators_for_symbol(
+    symbol: str,
+    timeframe: str = "1d",
+    db: Session = Depends(get_db)
+):
+    """
+    Calculate and store indicators for all existing candles (doesn't fetch new data).
+    Useful to populate indicators after adding a new stock or strategy.
+    """
+    from services.indicator_service import calculate_indicators_for_candles
+    
+    stock = db.query(Stock).filter(Stock.symbol == symbol.upper()).first()
+    if not stock:
+        raise HTTPException(status_code=404, detail=f"Stock {symbol} not found")
+    
+    tf_map = {
+        "1m": TimeFrame.M1, "5m": TimeFrame.M5, "15m": TimeFrame.M15, "30m": TimeFrame.M30,
+        "1h": TimeFrame.H1, "2h": TimeFrame.H2, "3h": TimeFrame.H3, "4h": TimeFrame.H4, "5h": TimeFrame.H5,
+        "1d": TimeFrame.D1
+    }
+    tf = tf_map.get(timeframe)
+    if not tf:
+        raise HTTPException(status_code=400, detail="Invalid timeframe. Use: 1m, 5m, 15m, 30m, 1h, 2h, 3h, 4h, 5h, 1d")
+    
+    try:
+        result = calculate_indicators_for_candles(db, stock.id, tf)
+        return {
+            "symbol": symbol.upper(),
+            "timeframe": timeframe,
+            **result
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error calculating indicators: {str(e)}")
+
+
 @app.post("/candles/cleanup-duplicates", tags=["Candles"])
 def cleanup_duplicate_candles(symbol: Optional[str] = None, db: Session = Depends(get_db)):
     """

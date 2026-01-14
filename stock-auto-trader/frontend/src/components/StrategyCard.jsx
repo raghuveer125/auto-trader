@@ -66,10 +66,16 @@ const StrategyCard = ({ strategy, signal: initialSignal, candles: initialCandles
   const dropdownRef = useRef(null);
   const cardRef = useRef(null);
 
-  // Reset to initial data when props change
+  // Track whether we've fetched custom timeframe data
+  const customTimeframeDataRef = useRef(false);
+
+  // Reset to initial data when props change (but preserve custom timeframe data)
   useEffect(() => {
-    setChartCandles(initialCandles || []);
-    setChartSignal(initialSignal || null);
+    // Only reset if we haven't fetched custom timeframe data yet
+    if (!customTimeframeDataRef.current) {
+      setChartCandles(initialCandles || []);
+      setChartSignal(initialSignal || null);
+    }
     setSelectedTimeframe(globalTimeframe);
   }, [initialCandles, initialSignal, globalTimeframe]);
 
@@ -109,6 +115,11 @@ const StrategyCard = ({ strategy, signal: initialSignal, candles: initialCandles
 
     try {
       setLoading(true);
+
+      // Mark that we're fetching custom timeframe data
+      if (timeframe !== '1d') {
+        customTimeframeDataRef.current = true;
+      }
 
       // Use stored indicators API - fetches both candles and pre-calculated indicators
       try {
@@ -247,24 +258,114 @@ const StrategyCard = ({ strategy, signal: initialSignal, candles: initialCandles
           setChartCandles([]);
         }
       } catch (indicatorError) {
-        console.log('Stored indicators not available, falling back to candles API:', indicatorError.message);
-        // Fallback to regular candles API if stored indicators not available
-        const candlesRes = await candlesAPI.get(symbol, timeframe, 200);
-        if (candlesRes.data && candlesRes.data.length > 0) {
-          setChartCandles(candlesRes.data);
-          // Try to get signals the old way as fallback
-          try {
-            const signalsRes = await signalsAPI.get(symbol, timeframe, strategy);
-            const signals = signalsRes.data.signals || [];
-            const strategySignal = signals.find(s => s.strategy === strategy);
-            if (strategySignal) {
-              setChartSignal(strategySignal);
+        console.log('Stored indicators not available, checking if we need to calculate them...');
+
+        // Check if we got empty indicators - if so, try to calculate them
+        try {
+          const indicatorsRes = await indicatorsAPI.get(symbol, timeframe, strategy, 200);
+          const { candles, indicators, strategies } = indicatorsRes.data;
+
+          // If candles exist but no indicators, calculate them
+          if (candles && candles.length > 0 && strategies.length === 0) {
+            console.log('Candles found but indicators missing, calculating...');
+            try {
+              await indicatorsAPI.calculate(symbol, timeframe);
+              // Retry fetching indicators after calculation
+              const retryRes = await indicatorsAPI.get(symbol, timeframe, strategy, 200);
+              const { candles: retryCandles, indicators: retryIndicators } = retryRes.data;
+
+              if (retryCandles && retryCandles.length > 0) {
+                setChartCandles(retryCandles);
+
+                const strategyIndicators = retryIndicators?.[strategy] || {};
+                if (strategyIndicators.signal && strategyIndicators.signal.length > 0) {
+                  const lastIdx = strategyIndicators.signal.length - 1;
+                  const signal = strategyIndicators.signal[lastIdx];
+                  const strength = strategyIndicators.strength?.[lastIdx] || 50;
+
+                  const chartIndicators = {
+                    timestamps: strategyIndicators.timestamps || [],
+                  };
+
+                  const lastCandle = retryCandles[retryCandles.length - 1];
+                  const price = lastCandle?.close;
+
+                  // Add strategy-specific indicator data
+                  if (strategy === 'MACD') {
+                    chartIndicators.macd_line = strategyIndicators.macd_line || [];
+                    chartIndicators.signal_line = strategyIndicators.macd_signal || [];
+                    chartIndicators.histogram_line = strategyIndicators.macd_histogram || [];
+                    chartIndicators.price = price;
+                    chartIndicators.macd = strategyIndicators.macd_line?.[lastIdx];
+                    chartIndicators.signal = strategyIndicators.macd_signal?.[lastIdx];
+                    chartIndicators.histogram = strategyIndicators.macd_histogram?.[lastIdx];
+                  } else if (strategy === 'RSI') {
+                    chartIndicators.rsi_line = strategyIndicators.rsi_value || [];
+                    chartIndicators.price = price;
+                    chartIndicators.rsi = strategyIndicators.rsi_value?.[lastIdx];
+                  } else if (strategy === 'MA_CROSSOVER') {
+                    chartIndicators.short_ma_line = strategyIndicators.short_ma || [];
+                    chartIndicators.long_ma_line = strategyIndicators.long_ma || [];
+                    chartIndicators.price = price;
+                    chartIndicators.short_ma = strategyIndicators.short_ma?.[lastIdx];
+                    chartIndicators.long_ma = strategyIndicators.long_ma?.[lastIdx];
+                  } else if (strategy === 'BOLLINGER') {
+                    chartIndicators.upper_band_line = strategyIndicators.bb_upper || [];
+                    chartIndicators.middle_band_line = strategyIndicators.bb_middle || [];
+                    chartIndicators.lower_band_line = strategyIndicators.bb_lower || [];
+                    chartIndicators.price = price;
+                    chartIndicators.upper_band = strategyIndicators.bb_upper?.[lastIdx];
+                    chartIndicators.middle_band = strategyIndicators.bb_middle?.[lastIdx];
+                    chartIndicators.lower_band = strategyIndicators.bb_lower?.[lastIdx];
+                    chartIndicators.percent_b = strategyIndicators.bb_percent_b?.[lastIdx];
+                  }
+
+                  setChartSignal({
+                    strategy,
+                    signal: signal || 'HOLD',
+                    strength,
+                    indicators: chartIndicators,
+                  });
+                }
+              }
+            } catch (calcError) {
+              console.log('Could not auto-calculate indicators:', calcError.message);
+              // Fall back to regular candles API without indicators
+              try {
+                const candlesRes = await candlesAPI.get(symbol, timeframe, 200);
+                if (candlesRes.data && candlesRes.data.length > 0) {
+                  setChartCandles(candlesRes.data);
+                  // Set a basic signal from initialSignal if available
+                  if (initialSignal) {
+                    setChartSignal(initialSignal);
+                  }
+                } else {
+                  setChartCandles([]);
+                }
+              } catch (fallbackError) {
+                console.log('Fallback candles API also failed:', fallbackError.message);
+                setChartCandles([]);
+              }
             }
-          } catch (signalError) {
-            console.log('Could not fetch signals for timeframe:', signalError.message);
           }
-        } else {
-          setChartCandles([]);
+        } catch (checkError) {
+          console.log('Falling back to candles API:', checkError.message);
+          // Final fallback to regular candles API
+          try {
+            const candlesRes = await candlesAPI.get(symbol, timeframe, 200);
+            if (candlesRes.data && candlesRes.data.length > 0) {
+              setChartCandles(candlesRes.data);
+              // Keep the initial signal available
+              if (initialSignal) {
+                setChartSignal(initialSignal);
+              }
+            } else {
+              setChartCandles([]);
+            }
+          } catch (fallbackError) {
+            console.log('Final fallback also failed:', fallbackError.message);
+            setChartCandles([]);
+          }
         }
       }
     } catch (error) {
@@ -300,6 +401,7 @@ const StrategyCard = ({ strategy, signal: initialSignal, candles: initialCandles
       fetchCandlesForTimeframe(timeframe);
     } else {
       // Reset to initial data for 1d
+      customTimeframeDataRef.current = false;
       setChartCandles(initialCandles);
       setChartSignal(initialSignal);
     }
