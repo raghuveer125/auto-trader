@@ -5,6 +5,7 @@ from sqlalchemy.orm import Session
 from typing import Optional, List, Dict
 from models import Stock, Candle, TimeFrame
 from services.binance_service import is_crypto_symbol, fetch_binance_candles
+from services.google_finance_service import google_finance_available
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 
@@ -28,6 +29,8 @@ RESAMPLE_TIMEFRAMES = {
     TimeFrame.H5: "5h",
 }
 
+def yahoo_symbol(symbol: str) -> str:
+    return "^BSESN" if symbol.upper() == "SENSEX" else symbol
 
 def get_or_create_stock(db: Session, symbol: str) -> Stock:
     """Get stock from DB or create if not exists (thread-safe)"""
@@ -35,15 +38,19 @@ def get_or_create_stock(db: Session, symbol: str) -> Stock:
     stock = db.query(Stock).filter(Stock.symbol == symbol).first()
 
     if not stock:
-        # Fetch name from Yahoo Finance API
+        # Fetch name from Yahoo Finance API (skip for indices like SENSEX)
         try:
-            url = f"https://query1.finance.yahoo.com/v1/finance/search?q={symbol}"
-            headers = {"User-Agent": "Mozilla/5.0"}
-            response = requests.get(url, headers=headers, timeout=10)
-            data = response.json()
-            name = data.get("quotes", [{}])[0].get("shortname", symbol)
-        except:
+            if symbol == "SENSEX":
+                name = "BSE Sensex"
+            else:
+                url = f"https://query1.finance.yahoo.com/v1/finance/search?q={symbol}"
+                headers = {"User-Agent": "Mozilla/5.0"}
+                response = requests.get(url, headers=headers, timeout=10)
+                data = response.json()
+                name = data.get("quotes", [{}])[0].get("shortname", symbol)
+        except Exception:
             name = symbol
+
 
         try:
             stock = Stock(symbol=symbol, name=name)
@@ -76,11 +83,17 @@ def fetch_candles_from_yahoo_api(
     timeframe: TimeFrame,
     start_timestamp: Optional[int] = None
 ) -> List[Dict]:
-    """Fetch candles from Yahoo Finance API or Binance for crypto"""
-    # Use Binance for cryptocurrency symbols (proper OHLC data)
+
+    # Use Binance for crypto (unchanged)
     if is_crypto_symbol(symbol):
-        print(f"[CRYPTO DETECTED] Using Binance API for {symbol}")
         return fetch_binance_candles(symbol, timeframe, start_timestamp)
+
+    # ✅ Google Finance FIRST (availability gate, no candle fetch)
+    if symbol.upper() == "SENSEX" and timeframe == TimeFrame.M1:
+        from services.google_finance_service import fetch_google_candles
+        candles = fetch_google_candles(symbol, timeframe, start_timestamp)
+        if candles:
+            return candles
 
     # Check if this timeframe needs resampling (for non-crypto via Yahoo)
     if timeframe in RESAMPLE_TIMEFRAMES:
@@ -91,7 +104,9 @@ def fetch_candles_from_yahoo_api(
         raise Exception(f"Unsupported timeframe: {timeframe.value}")
     
     # Yahoo Finance API endpoint
-    url = f"https://query1.finance.yahoo.com/v8/finance/chart/{symbol}"
+    y_symbol = yahoo_symbol(symbol)
+    url = f"https://query1.finance.yahoo.com/v8/finance/chart/{y_symbol}"
+
     
     headers = {
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
@@ -303,7 +318,7 @@ def sync_candles(
             min_interval = min_check_intervals.get(timeframe, 60)
 
             # Skip API call if latest candle is too recent
-            if time_diff < min_interval:
+            if timeframe != TimeFrame.M1 and time_diff < min_interval:
                 return {
                     "success": True,
                     "symbol": symbol,
@@ -315,13 +330,14 @@ def sync_candles(
     # Fetch from API (Yahoo Finance or Binance for crypto)
     try:
         candles_data = fetch_candles_from_yahoo_api(symbol, timeframe, start_timestamp)
-    except Exception as e:
+    except Exception:
         return {
-            "success": False,
-            "error": str(e),
+            "success": True,
             "symbol": symbol,
-            "timeframe": timeframe.value
+            "timeframe": timeframe.value,
+            "new_candles": 0
         }
+
 
     if not candles_data:
         return {

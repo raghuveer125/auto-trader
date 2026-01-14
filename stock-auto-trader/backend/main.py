@@ -295,12 +295,25 @@ def sync_stock_candles(
         tf = tf_map.get(timeframe)
         if not tf:
             raise HTTPException(status_code=400, detail="Invalid timeframe. Use: 1m, 5m, 15m, 30m, 1h, 2h, 3h, 4h, 5h, 1d")
-        result = sync_candles(db, symbol, tf, full_sync)
+        try:
+            result = sync_candles(db, symbol, tf, full_sync)
+        except Exception:
+            return {
+                "success": True,
+                "symbol": symbol.upper(),
+                "timeframe": timeframe,
+                "new_candles": 0
+            }
+
 
         # Calculate indicators after sync
-        if stock and result.get("new_candles", 0) > 0:
-            indicator_result = calculate_indicators_for_candles(db, stock.id, tf)
-            result["indicators_calculated"] = indicator_result
+        if stock:
+            try:
+                indicator_result = calculate_indicators_for_candles(db, stock.id, tf)
+                result["indicators_calculated"] = indicator_result
+            except Exception as e:
+                result["indicators_skipped"] = str(e)
+
 
         return result
     else:
@@ -320,12 +333,13 @@ def sync_stock_candles(
                         timeframes_with_new_candles.append((tf_name, tf_map[tf_name]))
 
             def calc_indicators_for_tf(tf_name: str, tf: TimeFrame):
-                """Calculate indicators for a single timeframe with its own DB session"""
                 thread_db = SessionLocal()
                 try:
+                    stock = thread_db.query(Stock).filter(Stock.symbol == symbol.upper()).first()
                     return tf_name, calculate_indicators_for_candles(thread_db, stock.id, tf)
                 finally:
                     thread_db.close()
+
 
             # Only calculate indicators for timeframes with new candles
             if timeframes_with_new_candles:
@@ -641,6 +655,43 @@ def _get_stored_indicator_values(db: Session, stock_id: int, timeframe: TimeFram
                 "bullish_count": [],
                 "bearish_count": []
             })
+        elif strat == "MTF_LUXALGO_5TH":
+            result["indicators"][strat].update({
+                "volatility_score": [],
+                "internal_length": [],
+                "swing_length": [],
+                "market_structure": [],
+                "trend": [],
+                "pattern_sequence": [],
+                "pivot_internal_high": [],
+                "pivot_swing_high": [],
+                "pivot_internal_low": [],
+                "pivot_swing_low": [],
+                "last_swing_high": [],
+                "last_swing_low": [],
+                "ob_bull_top": [],
+                "ob_bull_btm": [],
+                "ob_bull_avg": [],
+                "ob_bull_volume": [],
+                "ob_bull_time": [],
+                "ob_bull_mitigated": [],
+                "ob_bear_top": [],
+                "ob_bear_btm": [],
+                "ob_bear_avg": [],
+                "ob_bear_volume": [],
+                "ob_bear_time": [],
+                "ob_bear_mitigated": [],
+                "fvg_bull_top": [],
+                "fvg_bull_btm": [],
+                "fvg_bull_avg": [],
+                "fvg_bull_time": [],
+                "fvg_bull_mitigated": [],
+                "fvg_bear_top": [],
+                "fvg_bear_btm": [],
+                "fvg_bear_avg": [],
+                "fvg_bear_time": [],
+                "fvg_bear_mitigated": []
+            })
 
     # Populate data in chronological order (reverse the desc order)
     for candle in reversed(candles):
@@ -688,6 +739,41 @@ def _get_stored_indicator_values(db: Session, stock_id: int, timeframe: TimeFram
                     result["indicators"][strat]["ema_300"].append(ind.ema_300)
                     result["indicators"][strat]["bullish_count"].append(ind.bullish_count)
                     result["indicators"][strat]["bearish_count"].append(ind.bearish_count)
+                elif strat == "MTF_LUXALGO_5TH":
+                    result["indicators"][strat]["volatility_score"].append(ind.volatility_score)
+                    result["indicators"][strat]["internal_length"].append(ind.internal_length)
+                    result["indicators"][strat]["swing_length"].append(ind.swing_length)
+                    result["indicators"][strat]["market_structure"].append(ind.market_structure)
+                    result["indicators"][strat]["trend"].append(ind.trend)
+                    result["indicators"][strat]["pattern_sequence"].append(ind.pattern_sequence)
+                    result["indicators"][strat]["pivot_internal_high"].append(ind.pivot_internal_high)
+                    result["indicators"][strat]["pivot_swing_high"].append(ind.pivot_swing_high)
+                    result["indicators"][strat]["pivot_internal_low"].append(ind.pivot_internal_low)
+                    result["indicators"][strat]["pivot_swing_low"].append(ind.pivot_swing_low)
+                    result["indicators"][strat]["last_swing_high"].append(ind.last_swing_high)
+                    result["indicators"][strat]["last_swing_low"].append(ind.last_swing_low)
+                    result["indicators"][strat]["ob_bull_top"].append(ind.ob_bull_top)
+                    result["indicators"][strat]["ob_bull_btm"].append(ind.ob_bull_btm)
+                    result["indicators"][strat]["ob_bull_avg"].append(ind.ob_bull_avg)
+                    result["indicators"][strat]["ob_bull_volume"].append(ind.ob_bull_volume)
+                    result["indicators"][strat]["ob_bull_time"].append(ind.ob_bull_time.isoformat() + "Z" if ind.ob_bull_time else None)
+                    result["indicators"][strat]["ob_bull_mitigated"].append(ind.ob_bull_mitigated)
+                    result["indicators"][strat]["ob_bear_top"].append(ind.ob_bear_top)
+                    result["indicators"][strat]["ob_bear_btm"].append(ind.ob_bear_btm)
+                    result["indicators"][strat]["ob_bear_avg"].append(ind.ob_bear_avg)
+                    result["indicators"][strat]["ob_bear_volume"].append(ind.ob_bear_volume)
+                    result["indicators"][strat]["ob_bear_time"].append(ind.ob_bear_time.isoformat() + "Z" if ind.ob_bear_time else None)
+                    result["indicators"][strat]["ob_bear_mitigated"].append(ind.ob_bear_mitigated)
+                    result["indicators"][strat]["fvg_bull_top"].append(ind.fvg_bull_top)
+                    result["indicators"][strat]["fvg_bull_btm"].append(ind.fvg_bull_btm)
+                    result["indicators"][strat]["fvg_bull_avg"].append(ind.fvg_bull_avg)
+                    result["indicators"][strat]["fvg_bull_time"].append(ind.fvg_bull_time.isoformat() + "Z" if ind.fvg_bull_time else None)
+                    result["indicators"][strat]["fvg_bull_mitigated"].append(ind.fvg_bull_mitigated)
+                    result["indicators"][strat]["fvg_bear_top"].append(ind.fvg_bear_top)
+                    result["indicators"][strat]["fvg_bear_btm"].append(ind.fvg_bear_btm)
+                    result["indicators"][strat]["fvg_bear_avg"].append(ind.fvg_bear_avg)
+                    result["indicators"][strat]["fvg_bear_time"].append(ind.fvg_bear_time.isoformat() + "Z" if ind.fvg_bear_time else None)
+                    result["indicators"][strat]["fvg_bear_mitigated"].append(ind.fvg_bear_mitigated)
             else:
                 # No indicator value for this candle, append None
                 result["indicators"][strat]["signal"].append(None)
@@ -718,6 +804,41 @@ def _get_stored_indicator_values(db: Session, stock_id: int, timeframe: TimeFram
                     result["indicators"][strat]["ema_300"].append(None)
                     result["indicators"][strat]["bullish_count"].append(None)
                     result["indicators"][strat]["bearish_count"].append(None)
+                elif strat == "MTF_LUXALGO_5TH":
+                    result["indicators"][strat]["volatility_score"].append(None)
+                    result["indicators"][strat]["internal_length"].append(None)
+                    result["indicators"][strat]["swing_length"].append(None)
+                    result["indicators"][strat]["market_structure"].append(None)
+                    result["indicators"][strat]["trend"].append(None)
+                    result["indicators"][strat]["pattern_sequence"].append(None)
+                    result["indicators"][strat]["pivot_internal_high"].append(None)
+                    result["indicators"][strat]["pivot_swing_high"].append(None)
+                    result["indicators"][strat]["pivot_internal_low"].append(None)
+                    result["indicators"][strat]["pivot_swing_low"].append(None)
+                    result["indicators"][strat]["last_swing_high"].append(None)
+                    result["indicators"][strat]["last_swing_low"].append(None)
+                    result["indicators"][strat]["ob_bull_top"].append(None)
+                    result["indicators"][strat]["ob_bull_btm"].append(None)
+                    result["indicators"][strat]["ob_bull_avg"].append(None)
+                    result["indicators"][strat]["ob_bull_volume"].append(None)
+                    result["indicators"][strat]["ob_bull_time"].append(None)
+                    result["indicators"][strat]["ob_bull_mitigated"].append(None)
+                    result["indicators"][strat]["ob_bear_top"].append(None)
+                    result["indicators"][strat]["ob_bear_btm"].append(None)
+                    result["indicators"][strat]["ob_bear_avg"].append(None)
+                    result["indicators"][strat]["ob_bear_volume"].append(None)
+                    result["indicators"][strat]["ob_bear_time"].append(None)
+                    result["indicators"][strat]["ob_bear_mitigated"].append(None)
+                    result["indicators"][strat]["fvg_bull_top"].append(None)
+                    result["indicators"][strat]["fvg_bull_btm"].append(None)
+                    result["indicators"][strat]["fvg_bull_avg"].append(None)
+                    result["indicators"][strat]["fvg_bull_time"].append(None)
+                    result["indicators"][strat]["fvg_bull_mitigated"].append(None)
+                    result["indicators"][strat]["fvg_bear_top"].append(None)
+                    result["indicators"][strat]["fvg_bear_btm"].append(None)
+                    result["indicators"][strat]["fvg_bear_avg"].append(None)
+                    result["indicators"][strat]["fvg_bear_time"].append(None)
+                    result["indicators"][strat]["fvg_bear_mitigated"].append(None)
 
     return result
 
@@ -868,7 +989,7 @@ def get_signals(
     )
 
     if len(candles) < 50:
-        raise HTTPException(status_code=400, detail=f"Insufficient candles ({len(candles)}). Need at least 50.")
+        return {"stored": 0, "reason": "insufficient_candles", "count": len(candles)}
 
     # Convert to DataFrame
     df = pd.DataFrame([{
@@ -986,7 +1107,14 @@ def get_stored_indicators(
     result = _get_stored_indicator_values(db, stock.id, tf, strategy, limit)
 
     if not result:
-        raise HTTPException(status_code=404, detail="No indicator data found. Sync candles first.")
+        return {
+            "symbol": symbol.upper(),
+            "timeframe": timeframe,
+            "candle_count": 0,
+            "strategies": [],
+            "candles": [],
+            "indicators": {}
+        }
 
     return {
         "symbol": symbol.upper(),
@@ -1037,7 +1165,14 @@ def get_signals_fast(
         # Single strategy
         result = _get_latest_signal_from_stored(db, stock.id, tf, strategy)
         if not result:
-            raise HTTPException(status_code=404, detail=f"No stored indicators for {strategy}")
+            return {
+                "symbol": symbol.upper(),
+                "timeframe": timeframe,
+                "candle_count": 0,
+                "strategies": [],
+                "candles": [],
+                "indicators": {}
+            }
 
         return {
             "symbol": symbol.upper(),

@@ -956,6 +956,7 @@ class MarketStructure:
         self.last_high: Optional[float] = None
         self.last_low: Optional[float] = None
         self.last_major: Optional[str] = None  # "HH", "HL", "LH", "LL"
+        self.last_major_price: Optional[float] = None
         self.sequence: str = ""
         self.last_struct: str = ""
 
@@ -975,6 +976,7 @@ class MarketStructure:
             # Higher High - bullish
             struct = "HH"
             self.last_major = "HH"
+            self.last_major_price = pivot_high 
             self.sequence = "HH"
             self.last_struct = "HH"
         else:
@@ -1003,6 +1005,7 @@ class MarketStructure:
             # Lower Low - bearish
             struct = "LL"
             self.last_major = "LL"
+            self.last_major_price = pivot_low
             self.sequence = "LL"
             self.last_struct = "LL"
         else:
@@ -1014,6 +1017,7 @@ class MarketStructure:
 
         self.last_low = pivot_low
         return struct
+
 
     def get_trend(self) -> int:
         """

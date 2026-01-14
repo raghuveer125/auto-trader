@@ -1,5 +1,5 @@
-import { useState, useRef, useEffect, useCallback, Component } from 'react';
 import { GripHorizontal } from 'lucide-react';
+import { Component, useCallback, useEffect, useRef, useState } from 'react';
 import './MTFDashboard.css';
 
 // Error boundary to prevent crashes
