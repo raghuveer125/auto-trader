@@ -1,8 +1,8 @@
+import { ChevronDown, ChevronRight, Loader2, Plus, Search, Settings, Trash2, TrendingUp } from 'lucide-react';
 import { useState } from 'react';
-import { Search, TrendingUp, Settings, Plus, Trash2, Loader2 } from 'lucide-react';
-import StrategySettingsModal from './StrategySettingsModal';
 import { stocksAPI } from '../services/api';
 import './Sidebar.css';
+import StrategySettingsModal from './StrategySettingsModal';
 
 const Sidebar = ({ stocks, selectedStock, onSelectStock, strategies, selectedStrategies, onToggleStrategy, onSettingsSaved, onStocksChange }) => {
   const [searchTerm, setSearchTerm] = useState('');
@@ -12,10 +12,57 @@ const Sidebar = ({ stocks, selectedStock, onSelectStock, strategies, selectedStr
   const [addingStock, setAddingStock] = useState(false);
   const [deletingStock, setDeletingStock] = useState(null);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(null);
+  const [collapsedCategories, setCollapsedCategories] = useState({});
 
-  const filteredStocks = stocks.filter((stock) =>
-    stock.symbol.toLowerCase().includes(searchTerm.toLowerCase())
-  );
+  // Helper function to categorize stocks
+  const categorizeStock = (symbol) => {
+    const upperSymbol = symbol.toUpperCase();
+    // Crypto symbols
+    const cryptoSymbols = ['BTC', 'ETH', 'BNB', 'XRP', 'ADA', 'SOL', 'DOGE', 'AVAX', 'MATIC', 'LTC', 'LINK', 'ATOM', 'NEAR'];
+    // Indian stock suffixes
+    const indianSuffixes = ['.NS', '.BO'];
+
+    if (cryptoSymbols.some(c => upperSymbol.includes(c))) {
+      return 'Crypto';
+    } else if (indianSuffixes.some(suffix => upperSymbol.endsWith(suffix))) {
+      return 'Indian';
+    } else {
+      return 'US';
+    }
+  };
+
+  // Toggle category collapse state
+  const toggleCategoryCollapse = (category) => {
+    setCollapsedCategories(prev => ({
+      ...prev,
+      [category]: !prev[category]
+    }));
+  };
+
+  // Filter and group stocks by category
+  const filteredAndGroupedStocks = stocks
+    .filter((stock) =>
+      stock.symbol.toLowerCase().includes(searchTerm.toLowerCase())
+    )
+    .reduce((groups, stock) => {
+      const category = categorizeStock(stock.symbol);
+      if (!groups[category]) {
+        groups[category] = [];
+      }
+      groups[category].push(stock);
+      return groups;
+    }, {});
+
+  // Sort each category alphabetically and create final list
+  const categorizedAndSorted = Object.entries(filteredAndGroupedStocks)
+    .sort(([catA], [catB]) => {
+      const categoryOrder = { Crypto: 0, Indian: 1, US: 2 };
+      return (categoryOrder[catA] ?? 999) - (categoryOrder[catB] ?? 999);
+    })
+    .map(([category, stockList]) => ({
+      category,
+      stocks: stockList.sort((a, b) => a.symbol.localeCompare(b.symbol))
+    }));
 
   const handleAddStock = async () => {
     if (!searchTerm.trim()) return;
@@ -130,7 +177,7 @@ const Sidebar = ({ stocks, selectedStock, onSelectStock, strategies, selectedStr
               />
             </div>
             <div className="stock-list">
-              {filteredStocks.length === 0 ? (
+              {categorizedAndSorted.length === 0 ? (
                 <div className="no-stocks-container">
                   <div className="no-stocks">No stocks found</div>
                   {searchTerm.trim() && (
@@ -154,51 +201,72 @@ const Sidebar = ({ stocks, selectedStock, onSelectStock, strategies, selectedStr
                   )}
                 </div>
               ) : (
-                filteredStocks.map((stock) => (
-                  <div
-                    key={stock.symbol}
-                    className={`stock-item ${selectedStock === stock.symbol ? 'selected' : ''}`}
-                    onClick={() => onSelectStock(stock.symbol)}
-                  >
-                    <span className="stock-symbol">{stock.symbol}</span>
-                    <div className="stock-actions">
-                      <span className={`stock-change ${stock.change >= 0 ? 'positive' : 'negative'}`}>
-                        {stock.change >= 0 ? '+' : ''}
-                        {stock.change}%
-                      </span>
-                      {showDeleteConfirm === stock.symbol ? (
-                        <div className="delete-confirm">
-                          <button
-                            className="confirm-delete-btn"
-                            onClick={(e) => { e.stopPropagation(); handleDeleteStock(stock.symbol); }}
-                            disabled={deletingStock === stock.symbol}
-                          >
-                            {deletingStock === stock.symbol ? <Loader2 size={12} className="spinning" /> : 'Yes'}
-                          </button>
-                          <button
-                            className="cancel-delete-btn"
-                            onClick={(e) => { e.stopPropagation(); setShowDeleteConfirm(null); }}
-                          >
-                            No
-                          </button>
-                        </div>
-                      ) : (
-                        <button
-                          className="delete-stock-btn"
-                          onClick={(e) => { e.stopPropagation(); setShowDeleteConfirm(stock.symbol); }}
-                          title="Delete stock"
-                        >
-                          <Trash2 size={14} />
-                        </button>
-                      )}
+                categorizedAndSorted.map(({ category, stocks: categoryStocks }) => (
+                  <div key={category} className="stock-category">
+                    <div
+                      className="category-header"
+                      onClick={() => toggleCategoryCollapse(category)}
+                    >
+                      <div className="category-header-content">
+                        {collapsedCategories[category] ? (
+                          <ChevronRight size={14} className="category-toggle-icon" />
+                        ) : (
+                          <ChevronDown size={14} className="category-toggle-icon" />
+                        )}
+                        <span>{category}</span>
+                      </div>
                     </div>
+                    {!collapsedCategories[category] && (
+                      <>
+                        {categoryStocks.map((stock) => (
+                          <div
+                            key={stock.symbol}
+                            className={`stock-item ${selectedStock === stock.symbol ? 'selected' : ''}`}
+                            onClick={() => onSelectStock(stock.symbol)}
+                          >
+                            <span className="stock-symbol">{stock.symbol}</span>
+                            <div className="stock-actions">
+                              <span className={`stock-change ${stock.change >= 0 ? 'positive' : 'negative'}`}>
+                                {stock.change >= 0 ? '+' : ''}
+                                {stock.change}%
+                              </span>
+                              {showDeleteConfirm === stock.symbol ? (
+                                <div className="delete-confirm">
+                                  <button
+                                    className="confirm-delete-btn"
+                                    onClick={(e) => { e.stopPropagation(); handleDeleteStock(stock.symbol); }}
+                                    disabled={deletingStock === stock.symbol}
+                                  >
+                                    {deletingStock === stock.symbol ? <Loader2 size={12} className="spinning" /> : 'Yes'}
+                                  </button>
+                                  <button
+                                    className="cancel-delete-btn"
+                                    onClick={(e) => { e.stopPropagation(); setShowDeleteConfirm(null); }}
+                                  >
+                                    No
+                                  </button>
+                                </div>
+                              ) : (
+                                <button
+                                  className="delete-stock-btn"
+                                  onClick={(e) => { e.stopPropagation(); setShowDeleteConfirm(stock.symbol); }}
+                                  title="Delete stock"
+                                >
+                                  <Trash2 size={14} />
+                                </button>
+                              )}
+                            </div>
+                          </div>
+                        ))}
+                      </>
+                    )}
                   </div>
                 ))
               )}
             </div>
           </div>
 
-          <div className="sidebar-section">
+          <div className="sidebar-section strategies-section">
             <span className="section-label">Display Strategies</span>
             <div className="strategy-filter">
               {strategies.map((strategy) => (

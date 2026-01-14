@@ -91,13 +91,37 @@
 }
 
 @keyframes pulse {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0.5; }
+
+  0%,
+  100% {
+    opacity: 1;
+  }
+
+  50% {
+    opacity: 0.5;
+  }
 }
 
 .sidebar-section {
   padding: 20px;
   border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.sidebar-section:first-of-type {
+  flex: 1;
+  overflow: hidden;
+}
+
+.sidebar-section:first-of-type .stock-list {
+  flex: 1;
+  min-height: 0;
+}
+
+.strategies-section {
+  margin-top: auto;
 }
 
 .section-label {
@@ -142,9 +166,52 @@
 .stock-list {
   display: flex;
   flex-direction: column;
-  gap: 6px;
-  max-height: 300px;
+  gap: 0;
+  flex: 1;
   overflow-y: auto;
+}
+
+.stock-category {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+}
+
+.category-header {
+  display: flex;
+  align-items: center;
+  padding: 10px 12px;
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--accent-blue);
+  background: rgba(59, 130, 246, 0.08);
+  border-bottom: 1px solid rgba(59, 130, 246, 0.2);
+  margin-top: 8px;
+  cursor: pointer;
+  transition: all 0.2s;
+  user-select: none;
+}
+
+.category-header:hover {
+  background: rgba(59, 130, 246, 0.12);
+}
+
+.category-header-content {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+}
+
+.category-toggle-icon {
+  flex-shrink: 0;
+  color: var(--accent-blue);
+}
+
+.stock-category:first-child .category-header {
+  margin-top: 0;
 }
 
 .stock-item {
@@ -154,9 +221,14 @@
   padding: 12px;
   background: var(--bg-card);
   border: 1px solid var(--border);
-  border-radius: 8px;
+  border-radius: 0;
   cursor: pointer;
   transition: all 0.2s;
+  border-top: none;
+}
+
+.stock-item:first-of-type {
+  border-top: 1px solid var(--border);
 }
 
 .stock-item:hover {
@@ -299,8 +371,13 @@
 }
 
 @keyframes spin {
-  from { transform: rotate(0deg); }
-  to { transform: rotate(360deg); }
+  from {
+    transform: rotate(0deg);
+  }
+
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 .strategy-filter {
@@ -340,12 +417,12 @@
   flex-shrink: 0;
 }
 
-.strategy-checkbox input:checked + .checkmark {
+.strategy-checkbox input:checked+.checkmark {
   background: var(--accent-blue);
   border-color: var(--accent-blue);
 }
 
-.strategy-checkbox input:checked + .checkmark::after {
+.strategy-checkbox input:checked+.checkmark::after {
   content: '✓';
   position: absolute;
   top: 50%;
