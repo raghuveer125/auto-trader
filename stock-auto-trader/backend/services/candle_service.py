@@ -389,7 +389,8 @@ def sync_candles(
     skipped_count = len(candles_data) - len(new_candles)
 
     if not new_candles:
-        print(f\"ℹ️  No new candles: {len(candles_data)} fetched, all already in DB\")\n        return {
+        print(f"ℹ️  No new candles: {len(candles_data)} fetched, all already in DB")
+        return {
             "success": True,
             "symbol": symbol,
             "timeframe": timeframe.value,
@@ -419,7 +420,9 @@ def sync_candles(
     db.commit()
 
     # Log sync results
-    print(f\"✅ Sync complete: {len(new_candles)} new, {skipped_count} skipped, {len(candles_data)} total fetched\")\n\n    return {
+    print(f"✅ Sync complete: {len(new_candles)} new, {skipped_count} skipped, {len(candles_data)} total fetched")
+
+    return {
         "success": True,
         "symbol": symbol,
         "timeframe": timeframe.value,

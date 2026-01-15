@@ -245,10 +245,6 @@ def fetch_binance_candles(
 
     print(f"✅ Completed: {len(all_candles)} total candles for {binance_symbol} {timeframe.value}")
     return all_candles
-        print(f"⚠️  Hit max request limit ({max_requests}) for {binance_symbol} {timeframe.value}. Consider increasing limit or reducing timeframe.")
-
-    print(f"✅ Completed: {len(all_candles)} total candles for {binance_symbol} {timeframe.value}")
-    return all_candles
 
 
 def _fetch_and_resample_binance_candles(
