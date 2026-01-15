@@ -22,7 +22,24 @@ const TradingChartWithIndicators = ({
   const indicatorChartHeight = height * 0.35;
 
   useEffect(() => {
-    if (!priceChartContainerRef.current || !data || data.length === 0) return;
+    console.log(`🎨 TradingChartWithIndicators initializing for ${strategyName}:`, {
+      hasRef: !!priceChartContainerRef.current,
+      hasData: !!data,
+      dataLength: data?.length || 0,
+      height,
+      strategyName
+    });
+
+    if (!priceChartContainerRef.current || !data || data.length === 0) {
+      console.warn('⚠️ Chart initialization skipped - missing ref or data', {
+        ref: !!priceChartContainerRef.current,
+        data: !!data,
+        length: data?.length
+      });
+      return;
+    }
+
+    console.log(`✅ Starting chart creation for ${strategyName}`);
 
     // Helper to convert timestamp to unix seconds
     const toUnixTime = (timestamp) => {
@@ -128,6 +145,7 @@ const TradingChartWithIndicators = ({
     };
 
     // Create main price chart
+    console.log(`📊 Creating price chart container with width: ${priceChartContainerRef.current.clientWidth}, height: ${priceChartHeight}`);
     const priceChart = createChart(priceChartContainerRef.current, {
       ...chartOptions,
       width: priceChartContainerRef.current.clientWidth,
@@ -135,6 +153,7 @@ const TradingChartWithIndicators = ({
     });
 
     priceChartRef.current = priceChart;
+    console.log(`✅ Price chart created successfully`);
 
     // Add candlestick series
     const candlestickSeries = priceChart.addCandlestickSeries({

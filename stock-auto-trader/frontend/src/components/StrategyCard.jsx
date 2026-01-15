@@ -66,31 +66,17 @@ const StrategyCard = ({ strategy, signal: initialSignal, candles: initialCandles
   const dropdownRef = useRef(null);
   const cardRef = useRef(null);
 
-  // Track whether we've fetched custom timeframe data
-  const customTimeframeDataRef = useRef(false);
-
-  // Reset to initial data when props change (but preserve custom timeframe data)
+  // Reset state when symbol changes
   useEffect(() => {
-    // Only reset if we haven't fetched custom timeframe data yet
-    if (!customTimeframeDataRef.current) {
-      setChartCandles(initialCandles || []);
-      setChartSignal(initialSignal || null);
-    }
+    setChartCandles([]);
+    setChartSignal(null);
     setSelectedTimeframe(globalTimeframe);
-  }, [initialCandles, initialSignal, globalTimeframe]);
+  }, [symbol, globalTimeframe]);
 
-  // Sync with global timeframe changes
+  // Fetch data whenever timeframe or symbol changes (always fetch via API, never use cached data)
   useEffect(() => {
-    if (globalTimeframe !== selectedTimeframe) {
-      setSelectedTimeframe(globalTimeframe);
-      if (globalTimeframe !== '1d') {
-        fetchCandlesForTimeframe(globalTimeframe);
-      } else {
-        setChartCandles(initialCandles);
-        setChartSignal(initialSignal);
-      }
-    }
-  }, [globalTimeframe]);
+    fetchCandlesForTimeframe(globalTimeframe);
+  }, [symbol, globalTimeframe]);
 
   // Close dropdown when clicking outside
   useEffect(() => {
@@ -116,266 +102,227 @@ const StrategyCard = ({ strategy, signal: initialSignal, candles: initialCandles
     try {
       setLoading(true);
 
-      // Mark that we're fetching custom timeframe data
-      if (timeframe !== '1d') {
-        customTimeframeDataRef.current = true;
-      }
+      // For MTF_EMA, always fetch from signals API (which has trend_dashboard for all timeframes)
+      // For other strategies, fetch from indicators API
+      if (strategy === 'MTF_EMA') {
+        console.log(`📊 Fetching MTF_EMA signals for ${symbol}`);
+        try {
+          // Get signals from 1d timeframe (has all timeframes in trend_dashboard)
+          const signalsRes = await signalsAPI.get(symbol, '1d', 'MTF_EMA');
+          const signals = signalsRes.data.signals || [];
+          const mtfSignal = signals.find(s => s.strategy === 'MTF_EMA');
 
-      // Use stored indicators API - fetches both candles and pre-calculated indicators
-      try {
-        const indicatorsRes = await indicatorsAPI.get(symbol, timeframe, strategy, 200);
-        const { candles, indicators } = indicatorsRes.data;
+          if (mtfSignal) {
+            console.log(`✅ MTF_EMA signal found with trend_dashboard`);
 
-        if (candles && candles.length > 0) {
-          setChartCandles(candles);
+            // For MTF_EMA, get candles from the requested timeframe using indicators API
+            // Don't filter by strategy - just get candles for the timeframe
+            try {
+              const candlesFromIndicators = await indicatorsAPI.get(symbol, timeframe, null, 200);
+              const candles = candlesFromIndicators.data.candles || [];
+              setChartCandles(candles);
+              if (candles.length === 0) {
+                console.warn(`⚠️ No candles found for ${symbol} ${timeframe}`);
+              }
+            } catch (candlesError) {
+              console.error('Error loading candles:', candlesError.message);
+              setChartCandles([]);
+            }
 
-          // Build signal object from stored indicators for this strategy
-          const strategyIndicators = indicators?.[strategy] || {};
-          if (strategyIndicators.signal && strategyIndicators.signal.length > 0) {
-            const lastIdx = strategyIndicators.signal.length - 1;
-            const signal = strategyIndicators.signal[lastIdx];
-            const strength = strategyIndicators.strength?.[lastIdx] || 50;
-
-            // Build indicators object for chart rendering
+            // Build chart signal with MTF data
             const chartIndicators = {
-              timestamps: strategyIndicators.timestamps || [],
+              timestamps: mtfSignal.indicators.timestamps || [],
+              trend_dashboard: mtfSignal.indicators.trend_dashboard,
+              bullish_count: mtfSignal.indicators.bullish_count,
+              bearish_count: mtfSignal.indicators.bearish_count,
+              total_cells: mtfSignal.indicators.total_cells,
             };
 
-            // Get the last candle price
-            const lastCandle = candles[candles.length - 1];
-            const price = lastCandle?.close;
-
-            // Add strategy-specific indicator data
-            if (strategy === 'MACD') {
-              chartIndicators.macd_line = strategyIndicators.macd_line || [];
-              chartIndicators.signal_line = strategyIndicators.macd_signal || [];
-              chartIndicators.histogram_line = strategyIndicators.macd_histogram || [];
-              // Add scalar values for display
-              chartIndicators.price = price;
-              chartIndicators.macd = strategyIndicators.macd_line?.[lastIdx];
-              chartIndicators.signal = strategyIndicators.macd_signal?.[lastIdx];
-              chartIndicators.histogram = strategyIndicators.macd_histogram?.[lastIdx];
-            } else if (strategy === 'RSI') {
-              chartIndicators.rsi_line = strategyIndicators.rsi_value || [];
-              // Add scalar values for display
-              chartIndicators.price = price;
-              chartIndicators.rsi = strategyIndicators.rsi_value?.[lastIdx];
-            } else if (strategy === 'MA_CROSSOVER') {
-              chartIndicators.short_ma_line = strategyIndicators.short_ma || [];
-              chartIndicators.long_ma_line = strategyIndicators.long_ma || [];
-              // Add scalar values for display
-              chartIndicators.price = price;
-              chartIndicators.short_ma = strategyIndicators.short_ma?.[lastIdx];
-              chartIndicators.long_ma = strategyIndicators.long_ma?.[lastIdx];
-            } else if (strategy === 'BOLLINGER') {
-              chartIndicators.upper_band_line = strategyIndicators.bb_upper || [];
-              chartIndicators.middle_band_line = strategyIndicators.bb_middle || [];
-              chartIndicators.lower_band_line = strategyIndicators.bb_lower || [];
-              // Add scalar values for display
-              chartIndicators.price = price;
-              chartIndicators.upper_band = strategyIndicators.bb_upper?.[lastIdx];
-              chartIndicators.middle_band = strategyIndicators.bb_middle?.[lastIdx];
-              chartIndicators.lower_band = strategyIndicators.bb_lower?.[lastIdx];
-              chartIndicators.percent_b = strategyIndicators.bb_percent_b?.[lastIdx];
-              // Calculate bandwidth percentage
-              const upper = strategyIndicators.bb_upper?.[lastIdx];
-              const lower = strategyIndicators.bb_lower?.[lastIdx];
-              const middle = strategyIndicators.bb_middle?.[lastIdx];
-              if (upper && lower && middle) {
-                chartIndicators.bandwidth_pct = ((upper - lower) / middle * 100);
-              }
-            } else if (strategy === 'MTF_EMA') {
+            // Also add EMA lines for current timeframe if available
+            if (mtfSignal.indicators.ema_lines) {
               const emaPeriods = [20, 30, 40, 50, 60, 200, 300];
-              chartIndicators.ema_lines = {
-                ema_20: strategyIndicators.ema_20 || [],
-                ema_30: strategyIndicators.ema_30 || [],
-                ema_40: strategyIndicators.ema_40 || [],
-                ema_50: strategyIndicators.ema_50 || [],
-                ema_60: strategyIndicators.ema_60 || [],
-                ema_200: strategyIndicators.ema_200 || [],
-                ema_300: strategyIndicators.ema_300 || [],
-              };
-              // Calculate ema_trends from the stored values (EMA > EMA[2-bars-ago] = bullish)
-              chartIndicators.ema_trends = {};
+              chartIndicators.ema_lines = mtfSignal.indicators.ema_lines;
+              chartIndicators.ema_trends = mtfSignal.indicators.ema_trends || {};
               emaPeriods.forEach(period => {
                 const emaKey = `ema_${period}`;
-                const emaValues = strategyIndicators[emaKey] || [];
-                if (emaValues.length >= 3) {
-                  const current = emaValues[emaValues.length - 1];
-                  const prev2 = emaValues[emaValues.length - 3];
-                  chartIndicators.ema_trends[emaKey] = current > prev2;
-                } else {
-                  chartIndicators.ema_trends[emaKey] = true; // default bullish
-                }
+                chartIndicators[emaKey] = mtfSignal.indicators[emaKey];
               });
-              chartIndicators.bullish_count = strategyIndicators.bullish_count?.[lastIdx];
-              chartIndicators.bearish_count = strategyIndicators.bearish_count?.[lastIdx];
-
-              // Fetch full MTF dashboard from signals API (contains all timeframes)
-              try {
-                const mtfSignalsRes = await signalsAPI.get(symbol, '1d', 'MTF_EMA');
-                const mtfSignals = mtfSignalsRes.data.signals || [];
-                const mtfSignal = mtfSignals.find(s => s.strategy === 'MTF_EMA');
-                if (mtfSignal?.indicators?.trend_dashboard) {
-                  chartIndicators.trend_dashboard = mtfSignal.indicators.trend_dashboard;
-                  chartIndicators.bullish_count = mtfSignal.indicators.bullish_count;
-                  chartIndicators.bearish_count = mtfSignal.indicators.bearish_count;
-                  chartIndicators.total_cells = mtfSignal.indicators.total_cells;
-                }
-              } catch (mtfError) {
-                console.log('Could not fetch MTF dashboard:', mtfError.message);
-              }
-            } else if (strategy === 'MTF_LUXALGO_5TH') {
-              // MTF LuxAlgo 5th - Add pivot and market structure data
-              chartIndicators.close_line = strategyIndicators.close_line || [];
-              chartIndicators.high_line = strategyIndicators.high_line || [];
-              chartIndicators.low_line = strategyIndicators.low_line || [];
-
-              // Add scalar values for display
-              chartIndicators.price = price;
-              chartIndicators.volatility_score = strategyIndicators.volatility_score?.[lastIdx];
-              chartIndicators.internal_length = strategyIndicators.internal_length?.[lastIdx];
-              chartIndicators.swing_length = strategyIndicators.swing_length?.[lastIdx];
-              chartIndicators.market_structure = strategyIndicators.market_structure?.[lastIdx];
-              chartIndicators.trend = strategyIndicators.trend?.[lastIdx];
-              chartIndicators.pattern_sequence = strategyIndicators.pattern_sequence?.[lastIdx];
-              chartIndicators.pivot_internal_high = strategyIndicators.pivot_internal_high?.[lastIdx];
-              chartIndicators.pivot_swing_high = strategyIndicators.pivot_swing_high?.[lastIdx];
-              chartIndicators.pivot_internal_low = strategyIndicators.pivot_internal_low?.[lastIdx];
-              chartIndicators.pivot_swing_low = strategyIndicators.pivot_swing_low?.[lastIdx];
-              chartIndicators.last_swing_high = strategyIndicators.last_swing_high?.[lastIdx];
-              chartIndicators.last_swing_low = strategyIndicators.last_swing_low?.[lastIdx];
             }
 
             setChartSignal({
-              strategy,
-              signal: signal || 'HOLD',
-              strength,
+              strategy: 'MTF_EMA',
+              signal: mtfSignal.signal || 'HOLD',
+              strength: mtfSignal.strength || 50,
+              reason: mtfSignal.reason || '',
               indicators: chartIndicators,
             });
-          }
-        } else {
-          setChartCandles([]);
-        }
-      } catch (indicatorError) {
-        console.log('Stored indicators not available, checking if we need to calculate them...');
-
-        // Check if we got empty indicators - if so, try to calculate them
-        try {
-          const indicatorsRes = await indicatorsAPI.get(symbol, timeframe, strategy, 200);
-          const { candles, indicators, strategies } = indicatorsRes.data;
-
-          // If candles exist but no indicators, calculate them
-          if (candles && candles.length > 0 && strategies.length === 0) {
-            console.log('Candles found but indicators missing, calculating...');
-            try {
-              await indicatorsAPI.calculate(symbol, timeframe);
-              // Retry fetching indicators after calculation
-              const retryRes = await indicatorsAPI.get(symbol, timeframe, strategy, 200);
-              const { candles: retryCandles, indicators: retryIndicators } = retryRes.data;
-
-              if (retryCandles && retryCandles.length > 0) {
-                setChartCandles(retryCandles);
-
-                const strategyIndicators = retryIndicators?.[strategy] || {};
-                if (strategyIndicators.signal && strategyIndicators.signal.length > 0) {
-                  const lastIdx = strategyIndicators.signal.length - 1;
-                  const signal = strategyIndicators.signal[lastIdx];
-                  const strength = strategyIndicators.strength?.[lastIdx] || 50;
-
-                  const chartIndicators = {
-                    timestamps: strategyIndicators.timestamps || [],
-                  };
-
-                  const lastCandle = retryCandles[retryCandles.length - 1];
-                  const price = lastCandle?.close;
-
-                  // Add strategy-specific indicator data
-                  if (strategy === 'MACD') {
-                    chartIndicators.macd_line = strategyIndicators.macd_line || [];
-                    chartIndicators.signal_line = strategyIndicators.macd_signal || [];
-                    chartIndicators.histogram_line = strategyIndicators.macd_histogram || [];
-                    chartIndicators.price = price;
-                    chartIndicators.macd = strategyIndicators.macd_line?.[lastIdx];
-                    chartIndicators.signal = strategyIndicators.macd_signal?.[lastIdx];
-                    chartIndicators.histogram = strategyIndicators.macd_histogram?.[lastIdx];
-                  } else if (strategy === 'RSI') {
-                    chartIndicators.rsi_line = strategyIndicators.rsi_value || [];
-                    chartIndicators.price = price;
-                    chartIndicators.rsi = strategyIndicators.rsi_value?.[lastIdx];
-                  } else if (strategy === 'MA_CROSSOVER') {
-                    chartIndicators.short_ma_line = strategyIndicators.short_ma || [];
-                    chartIndicators.long_ma_line = strategyIndicators.long_ma || [];
-                    chartIndicators.price = price;
-                    chartIndicators.short_ma = strategyIndicators.short_ma?.[lastIdx];
-                    chartIndicators.long_ma = strategyIndicators.long_ma?.[lastIdx];
-                  } else if (strategy === 'BOLLINGER') {
-                    chartIndicators.upper_band_line = strategyIndicators.bb_upper || [];
-                    chartIndicators.middle_band_line = strategyIndicators.bb_middle || [];
-                    chartIndicators.lower_band_line = strategyIndicators.bb_lower || [];
-                    chartIndicators.price = price;
-                    chartIndicators.upper_band = strategyIndicators.bb_upper?.[lastIdx];
-                    chartIndicators.middle_band = strategyIndicators.bb_middle?.[lastIdx];
-                    chartIndicators.lower_band = strategyIndicators.bb_lower?.[lastIdx];
-                    chartIndicators.percent_b = strategyIndicators.bb_percent_b?.[lastIdx];
-                  }
-
-                  setChartSignal({
-                    strategy,
-                    signal: signal || 'HOLD',
-                    strength,
-                    indicators: chartIndicators,
-                  });
-                }
-              }
-            } catch (calcError) {
-              console.log('Could not auto-calculate indicators:', calcError.message);
-              // Fall back to regular candles API without indicators
-              try {
-                const candlesRes = await candlesAPI.get(symbol, timeframe, 200);
-                if (candlesRes.data && candlesRes.data.length > 0) {
-                  setChartCandles(candlesRes.data);
-                  // Set a basic signal from initialSignal if available
-                  if (initialSignal) {
-                    setChartSignal(initialSignal);
-                  }
-                } else {
-                  setChartCandles([]);
-                }
-              } catch (fallbackError) {
-                console.log('Fallback candles API also failed:', fallbackError.message);
-                setChartCandles([]);
-              }
-            }
-          }
-        } catch (checkError) {
-          console.log('Falling back to candles API:', checkError.message);
-          // Final fallback to regular candles API
-          try {
-            const candlesRes = await candlesAPI.get(symbol, timeframe, 200);
-            if (candlesRes.data && candlesRes.data.length > 0) {
-              setChartCandles(candlesRes.data);
-              // Keep the initial signal available
-              if (initialSignal) {
-                setChartSignal(initialSignal);
-              }
-            } else {
-              setChartCandles([]);
-            }
-          } catch (fallbackError) {
-            console.log('Final fallback also failed:', fallbackError.message);
+          } else {
+            console.log('⚠️ MTF_EMA signal not found');
             setChartCandles([]);
           }
+        } catch (mtfError) {
+          console.error('Error fetching MTF_EMA data:', mtfError);
+          setChartCandles([]);
+        }
+        return;
+      }
+
+      // For other strategies, use indicators API
+      const indicatorsRes = await indicatorsAPI.get(symbol, timeframe, strategy, 200);
+      const { candles, indicators, strategies } = indicatorsRes.data;
+
+      // Debug: Log candle data for Bollinger Band to investigate price mismatch
+      if (strategy === 'BOLLINGER' && candles && candles.length > 0) {
+        console.log(`🎯 BOLLINGER BAND DEBUG:`);
+        console.log(`   First candle: ${candles[0].timestamp} - Close: $${candles[0].close}`);
+        console.log(`   Last candle: ${candles[candles.length - 1].timestamp} - Close: $${candles[candles.length - 1].close}`);
+        console.log(`   Total candles: ${candles.length}`);
+      }
+
+      // If candles exist but no indicators, calculate them first
+      if (candles && candles.length > 0 && strategies.length === 0) {
+        console.log(`📊 Indicators missing for ${symbol} ${timeframe} ${strategy}, calculating...`);
+        try {
+          await indicatorsAPI.calculate(symbol, timeframe);
+          console.log(`✅ Indicators calculated for ${symbol} ${timeframe}`);
+          // Retry fetching after calculation
+          const retryRes = await indicatorsAPI.get(symbol, timeframe, strategy, 200);
+          const retryData = retryRes.data;
+          setChartCandles(retryData.candles || []);
+
+          const retryStrategyIndicators = retryData.indicators?.[strategy] || {};
+          if (retryStrategyIndicators.signal && retryStrategyIndicators.signal.length > 0) {
+            await _buildAndSetChartSignal(strategy, retryStrategyIndicators, retryData.candles);
+          }
+          return;
+        } catch (calcError) {
+          console.error('Error calculating indicators:', calcError);
+          setChartCandles(candles);
+          return;
         }
       }
-    } catch (error) {
-      console.error(`Error fetching ${timeframe} data:`, error);
-      if (error.response?.status === 400) {
+
+      if (candles && candles.length > 0) {
+        setChartCandles(candles);
+
+        // Build signal object from stored indicators for this strategy
+        const strategyIndicators = indicators?.[strategy] || {};
+        if (strategyIndicators.signal && strategyIndicators.signal.length > 0) {
+          await _buildAndSetChartSignal(strategy, strategyIndicators, candles);
+        } else {
+          console.log(`⚠️ No indicator data found for ${strategy} on ${timeframe}`);
+        }
+      } else {
+        console.log(`📭 No candles found for ${symbol} on ${timeframe}`);
         setChartCandles([]);
       }
+    } catch (error) {
+      console.error('Error fetching indicators:', error);
+      setChartCandles([]);
     } finally {
       setLoading(false);
     }
+  };
+
+  // Helper function to build and set chart signal data
+  const _buildAndSetChartSignal = async (strat, strategyIndicators, candles) => {
+    const lastIdx = strategyIndicators.signal.length - 1;
+    const signal = strategyIndicators.signal[lastIdx];
+    const strength = strategyIndicators.strength?.[lastIdx] || 50;
+
+    const chartIndicators = {
+      timestamps: strategyIndicators.timestamps || [],
+    };
+
+    const lastCandle = candles[candles.length - 1];
+    const price = lastCandle?.close;
+
+    // Add strategy-specific indicator data
+    if (strat === 'MACD') {
+      chartIndicators.macd_line = strategyIndicators.macd_line || [];
+      chartIndicators.signal_line = strategyIndicators.macd_signal || [];
+      chartIndicators.histogram_line = strategyIndicators.macd_histogram || [];
+      chartIndicators.price = price;
+      chartIndicators.macd = strategyIndicators.macd_line?.[lastIdx];
+      chartIndicators.signal = strategyIndicators.macd_signal?.[lastIdx];
+      chartIndicators.histogram = strategyIndicators.macd_histogram?.[lastIdx];
+    } else if (strat === 'RSI') {
+      chartIndicators.rsi_line = strategyIndicators.rsi_value || [];
+      chartIndicators.price = price;
+      chartIndicators.rsi = strategyIndicators.rsi_value?.[lastIdx];
+    } else if (strat === 'MA_CROSSOVER') {
+      chartIndicators.short_ma_line = strategyIndicators.short_ma || [];
+      chartIndicators.long_ma_line = strategyIndicators.long_ma || [];
+      chartIndicators.price = price;
+      chartIndicators.short_ma = strategyIndicators.short_ma?.[lastIdx];
+      chartIndicators.long_ma = strategyIndicators.long_ma?.[lastIdx];
+    } else if (strat === 'BOLLINGER') {
+      chartIndicators.upper_band_line = strategyIndicators.bb_upper || [];
+      chartIndicators.middle_band_line = strategyIndicators.bb_middle || [];
+      chartIndicators.lower_band_line = strategyIndicators.bb_lower || [];
+      chartIndicators.price = price;
+      chartIndicators.upper_band = strategyIndicators.bb_upper?.[lastIdx];
+      chartIndicators.middle_band = strategyIndicators.bb_middle?.[lastIdx];
+      chartIndicators.lower_band = strategyIndicators.bb_lower?.[lastIdx];
+      chartIndicators.percent_b = strategyIndicators.bb_percent_b?.[lastIdx];
+      const upper = strategyIndicators.bb_upper?.[lastIdx];
+      const lower = strategyIndicators.bb_lower?.[lastIdx];
+      const middle = strategyIndicators.bb_middle?.[lastIdx];
+      if (upper && lower && middle) {
+        chartIndicators.bandwidth_pct = ((upper - lower) / middle * 100);
+      }
+    } else if (strat === 'MTF_EMA') {
+      // MTF_EMA data is fetched in fetchCandlesForTimeframe, not here
+      // This block won't be reached for MTF_EMA
+      const emaPeriods = [20, 30, 40, 50, 60, 200, 300];
+      chartIndicators.ema_lines = {
+        ema_20: strategyIndicators.ema_20 || [],
+        ema_30: strategyIndicators.ema_30 || [],
+        ema_40: strategyIndicators.ema_40 || [],
+        ema_50: strategyIndicators.ema_50 || [],
+        ema_60: strategyIndicators.ema_60 || [],
+        ema_200: strategyIndicators.ema_200 || [],
+        ema_300: strategyIndicators.ema_300 || [],
+      };
+      chartIndicators.ema_trends = {};
+      emaPeriods.forEach(period => {
+        const emaKey = `ema_${period}`;
+        const emaValues = strategyIndicators[emaKey] || [];
+        if (emaValues.length >= 3) {
+          const current = emaValues[emaValues.length - 1];
+          const prev2 = emaValues[emaValues.length - 3];
+          chartIndicators.ema_trends[emaKey] = current > prev2;
+        } else {
+          chartIndicators.ema_trends[emaKey] = true;
+        }
+      });
+      chartIndicators.bullish_count = strategyIndicators.bullish_count?.[lastIdx];
+      chartIndicators.bearish_count = strategyIndicators.bearish_count?.[lastIdx];
+    } else if (strat === 'MTF_LUXALGO_5TH') {
+      chartIndicators.close_line = strategyIndicators.close_line || [];
+      chartIndicators.high_line = strategyIndicators.high_line || [];
+      chartIndicators.low_line = strategyIndicators.low_line || [];
+      chartIndicators.price = price;
+      chartIndicators.volatility_score = strategyIndicators.volatility_score?.[lastIdx];
+      chartIndicators.internal_length = strategyIndicators.internal_length?.[lastIdx];
+      chartIndicators.swing_length = strategyIndicators.swing_length?.[lastIdx];
+      chartIndicators.market_structure = strategyIndicators.market_structure?.[lastIdx];
+      chartIndicators.trend = strategyIndicators.trend?.[lastIdx];
+      chartIndicators.pattern_sequence = strategyIndicators.pattern_sequence?.[lastIdx];
+      chartIndicators.pivot_internal_high = strategyIndicators.pivot_internal_high?.[lastIdx];
+      chartIndicators.pivot_swing_high = strategyIndicators.pivot_swing_high?.[lastIdx];
+      chartIndicators.pivot_internal_low = strategyIndicators.pivot_internal_low?.[lastIdx];
+      chartIndicators.pivot_swing_low = strategyIndicators.pivot_swing_low?.[lastIdx];
+      chartIndicators.last_swing_high = strategyIndicators.last_swing_high?.[lastIdx];
+      chartIndicators.last_swing_low = strategyIndicators.last_swing_low?.[lastIdx];
+    }
+
+    setChartSignal({
+      strategy: strat,
+      signal: signal || 'HOLD',
+      strength,
+      indicators: chartIndicators,
+    });
   };
 
   // Sync candles for the selected timeframe
@@ -397,14 +344,8 @@ const StrategyCard = ({ strategy, signal: initialSignal, candles: initialCandles
   const handleTimeframeChange = (timeframe) => {
     setSelectedTimeframe(timeframe);
     setDropdownOpen(false);
-    if (timeframe !== '1d') {
-      fetchCandlesForTimeframe(timeframe);
-    } else {
-      // Reset to initial data for 1d
-      customTimeframeDataRef.current = false;
-      setChartCandles(initialCandles);
-      setChartSignal(initialSignal);
-    }
+    // Always fetch via API to ensure indicators are included, even for 1d
+    fetchCandlesForTimeframe(timeframe);
   };
   const getSignalIcon = (signalType) => {
     switch (signalType) {
@@ -568,14 +509,23 @@ const StrategyCard = ({ strategy, signal: initialSignal, candles: initialCandles
 
           {/* MTF_EMA Dashboard */}
           {strategy === 'MTF_EMA' && displaySignal?.indicators && (
-            <MTFDashboard
-              trendDashboard={displaySignal.indicators.trend_dashboard || null}
-              bullishCount={displaySignal.indicators.bullish_count}
-              bearishCount={displaySignal.indicators.bearish_count}
-              totalCells={displaySignal.indicators.total_cells}
-              emaTrends={displaySignal.indicators.ema_trends || null}
-              currentTimeframe={selectedTimeframe}
-            />
+            <>
+              {console.log('🎯 Rendering MTF Dashboard:', {
+                hasTrendDashboard: !!displaySignal.indicators.trend_dashboard,
+                trendDashboardKeys: displaySignal.indicators.trend_dashboard ? Object.keys(displaySignal.indicators.trend_dashboard) : 'none',
+                bullishCount: displaySignal.indicators.bullish_count,
+                bearishCount: displaySignal.indicators.bearish_count,
+                selectedTimeframe
+              })}
+              <MTFDashboard
+                trendDashboard={displaySignal.indicators.trend_dashboard || null}
+                bullishCount={displaySignal.indicators.bullish_count}
+                bearishCount={displaySignal.indicators.bearish_count}
+                totalCells={displaySignal.indicators.total_cells}
+                emaTrends={displaySignal.indicators.trend_dashboard ? null : displaySignal.indicators.ema_trends || null}
+                currentTimeframe={displaySignal.indicators.trend_dashboard ? null : selectedTimeframe}
+              />
+            </>
           )}
 
           {/* LuxAlgo Dashboard for MTF_LUXALGO_5TH */}
