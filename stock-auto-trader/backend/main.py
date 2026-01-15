@@ -1,12 +1,19 @@
-from fastapi import FastAPI, Depends, HTTPException, Query
+from fastapi import FastAPI, Depends, HTTPException, Query, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.orm import Session
 from typing import Optional, Dict
 from datetime import datetime
 import os
+import json
+import asyncio
+import logging
 
 from database import get_db, engine
 from models import Base, Stock, Candle, Trade, Portfolio, Holding, StrategySettings, TimeFrame, TradeType, StrategyType, IndicatorValue
+
+# Configure logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 # Create tables on startup
 Base.metadata.create_all(bind=engine)
@@ -1402,6 +1409,68 @@ def _get_default_settings(strategy_type: StrategyType) -> dict:
         StrategyType.BOLLINGER: {"period": 20, "std_dev": 2.0},
     }
     return defaults.get(strategy_type, {})
+
+
+# ============ WEBSOCKET ============
+@app.websocket("/ws/{symbol}/{timeframe}")
+async def websocket_endpoint(
+    websocket: WebSocket,
+    symbol: str,
+    timeframe: str
+):
+    """
+    WebSocket endpoint for real-time candle updates.
+    Connects to Binance WebSocket and streams live candle data.
+    """
+    from services.websocket_service import BinanceWebSocketClient
+    
+    await websocket.accept()
+    logger.info(f"WebSocket client connected for {symbol} {timeframe}")
+    
+    # Create callback to forward Binance data to client
+    async def forward_to_client(candle_data: dict):
+        try:
+            await websocket.send_json(candle_data)
+        except Exception as e:
+            logger.error(f"Error sending data to WebSocket client: {e}")
+    
+    # Create Binance WebSocket client
+    binance_client = BinanceWebSocketClient(symbol, timeframe)
+    
+    # Start connection task
+    connection_task = asyncio.create_task(binance_client.connect(forward_to_client))
+    
+    try:
+        # Keep connection alive and handle client messages
+        while True:
+            try:
+                # Wait for client messages (e.g., ping/pong)
+                data = await asyncio.wait_for(websocket.receive_text(), timeout=30.0)
+                
+                # Echo back to keep connection alive
+                if data == "ping":
+                    await websocket.send_text("pong")
+                    
+            except asyncio.TimeoutError:
+                # Send ping to keep connection alive
+                try:
+                    await websocket.send_json({"type": "ping"})
+                except:
+                    break
+                    
+    except WebSocketDisconnect:
+        logger.info(f"WebSocket client disconnected for {symbol} {timeframe}")
+    except Exception as e:
+        logger.error(f"WebSocket error: {e}")
+    finally:
+        # Clean up Binance connection
+        await binance_client.disconnect()
+        connection_task.cancel()
+        try:
+            await connection_task
+        except asyncio.CancelledError:
+            pass
+        logger.info(f"WebSocket connection closed for {symbol} {timeframe}")
 
 
 # ============ STARTUP ============
