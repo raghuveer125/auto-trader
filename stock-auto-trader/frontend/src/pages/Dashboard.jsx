@@ -19,7 +19,7 @@ const Dashboard = () => {
   const [loading, setLoading] = useState(true);
   const [syncing, setSyncing] = useState(false);
   const [error, setError] = useState(null);
-  const [globalTimeframe, setGlobalTimeframe] = useState('1d');
+  const [globalTimeframe, setGlobalTimeframe] = useState('5m');
   const [timeframeDropdownOpen, setTimeframeDropdownOpen] = useState(false);
 
   // Fetch initial data
@@ -107,13 +107,14 @@ const Dashboard = () => {
 
     try {
       setSyncing(true);
-      await candlesAPI.sync(selectedStock, null, false);
+      // Sync only the currently selected timeframe
+      await candlesAPI.sync(selectedStock, globalTimeframe, false);
 
-      // Refetch candles and signals
-      const candlesRes = await candlesAPI.get(selectedStock, '1d', 100);
+      // Refetch candles and signals using the current timeframe
+      const candlesRes = await candlesAPI.get(selectedStock, globalTimeframe, 100);
       setCandles(candlesRes.data);
 
-      const signalsRes = await signalsAPI.get(selectedStock, '1d');
+      const signalsRes = await signalsAPI.get(selectedStock, globalTimeframe);
       setSignals(signalsRes.data.signals || []);
 
       setSyncing(false);

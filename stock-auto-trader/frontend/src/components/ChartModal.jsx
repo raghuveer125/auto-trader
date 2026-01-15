@@ -19,7 +19,7 @@ const ChartModal = ({ isOpen, onClose, strategy, signal, candles: initialCandles
   const chartBodyRef = useRef(null);
 
   // Timeframe state
-  const [selectedTimeframe, setSelectedTimeframe] = useState('1d');
+  const [selectedTimeframe, setSelectedTimeframe] = useState('5m');
   const [chartCandles, setChartCandles] = useState(initialCandles);
   const [chartSignal, setChartSignal] = useState(signal);
   const [loading, setLoading] = useState(false);

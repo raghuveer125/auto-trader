@@ -52,11 +52,11 @@ const TIMEFRAMES = [
   { value: '1d', label: '1d' },
 ];
 
-const StrategyCard = ({ strategy, signal: initialSignal, candles: initialCandles, trades = [], symbol, globalTimeframe = '1d', onTradeExecuted }) => {
+const StrategyCard = ({ strategy, signal: initialSignal, candles: initialCandles, trades = [], symbol, globalTimeframe = '5m', onTradeExecuted }) => {
   const [isModalOpen, setIsModalOpen] = useState(false);
 
   // Timeframe state
-  const [selectedTimeframe, setSelectedTimeframe] = useState('1d');
+  const [selectedTimeframe, setSelectedTimeframe] = useState('5m');
   const [chartCandles, setChartCandles] = useState(initialCandles || []);
   const [chartSignal, setChartSignal] = useState(initialSignal || null);
   const [loading, setLoading] = useState(false);
