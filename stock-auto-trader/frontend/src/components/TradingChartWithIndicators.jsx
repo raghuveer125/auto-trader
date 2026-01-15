@@ -149,7 +149,7 @@ const TradingChartWithIndicators = ({
     const tooltip = document.createElement('div');
     tooltip.style.cssText = `
       position: absolute;
-      top: 8px;
+      top: 45px;
       left: 8px;
       background: rgba(26, 34, 52, 0.95);
       color: #94a3b8;
@@ -165,6 +165,28 @@ const TradingChartWithIndicators = ({
     `;
     priceChartContainerRef.current.appendChild(tooltip);
     tooltipRef.current = tooltip;
+
+    // Create permanent display for latest candle values
+    const latestValuesDisplay = document.createElement('div');
+    latestValuesDisplay.style.cssText = `
+      position: absolute;
+      top: 8px;
+      left: 8px;
+      background: rgba(26, 34, 52, 0.95);
+      color: #94a3b8;
+      padding: 6px 12px;
+      border-radius: 4px;
+      font-size: 11px;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      pointer-events: none;
+      z-index: 11;
+      border: 1px solid #2d3748;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.3);
+      display: flex;
+      gap: 12px;
+      align-items: center;
+    `;
+    priceChartContainerRef.current.appendChild(latestValuesDisplay);
 
     // Add candlestick series
     const candlestickSeries = priceChart.addCandlestickSeries({
@@ -184,6 +206,7 @@ const TradingChartWithIndicators = ({
         high: candle.high,
         low: candle.low,
         close: candle.close,
+        volume: candle.volume,
       }))
       .sort((a, b) => a.time - b.time);
 
@@ -191,6 +214,36 @@ const TradingChartWithIndicators = ({
     const latestCandleTime = formattedData.length > 0 ? formattedData[formattedData.length - 1].time : 0;
 
     candlestickSeries.setData(formattedData);
+
+    // Update latest values display
+    if (formattedData.length > 0) {
+      const latest = formattedData[formattedData.length - 1];
+      const previous = formattedData.length > 1 ? formattedData[formattedData.length - 2] : null;
+
+      const change = previous ? latest.close - previous.close : 0;
+      const changePercent = previous && previous.close !== 0 ? (change / previous.close) * 100 : 0;
+      const isPositive = change >= 0;
+      const changeColor = isPositive ? '#10b981' : '#ef4444';
+      const changeSign = isPositive ? '+' : '';
+
+      // Format volume
+      const formatVolume = (vol) => {
+        if (!vol) return '0';
+        if (vol >= 1e9) return `${(vol / 1e9).toFixed(2)}B`;
+        if (vol >= 1e6) return `${(vol / 1e6).toFixed(2)}M`;
+        if (vol >= 1e3) return `${(vol / 1e3).toFixed(2)}K`;
+        return vol.toFixed(2);
+      };
+
+      latestValuesDisplay.innerHTML = `
+        <span style="color: #cbd5e1; font-weight: 600;">O</span> <span style="color: #94a3b8;">${latest.open.toFixed(2)}</span>
+        <span style="color: #cbd5e1; font-weight: 600;">H</span> <span style="color: #10b981;">${latest.high.toFixed(2)}</span>
+        <span style="color: #cbd5e1; font-weight: 600;">L</span> <span style="color: #ef4444;">${latest.low.toFixed(2)}</span>
+        <span style="color: #cbd5e1; font-weight: 600;">C</span> <span style="color: ${isPositive ? '#10b981' : '#ef4444'}; font-weight: 600;">${latest.close.toFixed(2)}</span>
+        <span style="color: ${changeColor}; font-weight: 600;">${changeSign}${change.toFixed(2)} (${changeSign}${changePercent.toFixed(2)}%)</span>
+        <span style="color: #cbd5e1; font-weight: 600;">Vol</span> <span style="color: #94a3b8;">${formatVolume(latest.volume)}</span>
+      `;
+    }
 
     // Add custom tick mark formatter to show time for latest candle
     priceChart.timeScale().applyOptions({
@@ -293,7 +346,7 @@ const TradingChartWithIndicators = ({
 
     // Add crosshair move handler to show OHLCV on hover
     priceChart.subscribeCrosshairMove((param) => {
-      if (!tooltip) return;
+      if (!tooltip || !latestValuesDisplay) return;
 
       if (
         param.point === undefined ||
@@ -302,14 +355,19 @@ const TradingChartWithIndicators = ({
         param.point.y < 0
       ) {
         tooltip.style.display = 'none';
+        latestValuesDisplay.style.display = 'flex'; // Show latest values when not hovering
         return;
       }
 
       const data = param.seriesData.get(candlestickSeries);
       if (!data) {
         tooltip.style.display = 'none';
+        latestValuesDisplay.style.display = 'flex';
         return;
       }
+
+      // Hide latest values display when hovering
+      latestValuesDisplay.style.display = 'none';
 
       const date = new Date(param.time * 1000);
       const timeStr = date.toLocaleString('en-IN', {
@@ -959,6 +1017,15 @@ const TradingChartWithIndicators = ({
       if (tooltipRef.current && priceChartContainerRef.current) {
         priceChartContainerRef.current.removeChild(tooltipRef.current);
         tooltipRef.current = null;
+      }
+
+      // Remove latest values display
+      if (latestValuesDisplay && priceChartContainerRef.current) {
+        try {
+          priceChartContainerRef.current.removeChild(latestValuesDisplay);
+        } catch (e) {
+          // Already removed
+        }
       }
 
       // Remove wheel and mouse event listeners for chart sync
