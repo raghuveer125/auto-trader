@@ -130,18 +130,6 @@ const TradingChartWithIndicators = ({
         rightOffset: 5,
         barSpacing: 6,
         minBarSpacing: 2,
-        // Convert to IST (UTC+5:30)
-        // Backend sends UTC timestamps, browser converts to IST
-        tickMarkFormatter: (time) => {
-          const date = new Date(time * 1000);
-          return date.toLocaleString('en-IN', {
-            month: 'short',
-            day: 'numeric',
-            hour: '2-digit',
-            minute: '2-digit',
-            timeZone: 'Asia/Kolkata'
-          });
-        },
       },
     };
 
@@ -177,7 +165,47 @@ const TradingChartWithIndicators = ({
       }))
       .sort((a, b) => a.time - b.time);
 
+    // Store the latest candle time for tick formatter
+    const latestCandleTime = formattedData.length > 0 ? formattedData[formattedData.length - 1].time : 0;
+
     candlestickSeries.setData(formattedData);
+
+    // Add custom tick mark formatter to show time for latest candle
+    priceChart.timeScale().applyOptions({
+      tickMarkFormatter: (time) => {
+        const date = new Date(time * 1000);
+        const hours = date.getHours();
+        const minutes = date.getMinutes();
+
+        // Always show time for the latest candle
+        const isLatestCandle = time === latestCandleTime;
+        if (isLatestCandle) {
+          return date.toLocaleString('en-IN', {
+            hour: '2-digit',
+            minute: '2-digit',
+            timeZone: 'Asia/Kolkata'
+          });
+        }
+
+        // Check if this is the first candle of a new day (00:00)
+        const isFirstCandleOfDay = hours === 0 && minutes === 0;
+
+        if (isFirstCandleOfDay) {
+          // Show only day number for first candle of the day
+          return date.toLocaleString('en-IN', {
+            day: 'numeric',
+            timeZone: 'Asia/Kolkata'
+          });
+        } else {
+          // Show only time for all other candles
+          return date.toLocaleString('en-IN', {
+            hour: '2-digit',
+            minute: '2-digit',
+            timeZone: 'Asia/Kolkata'
+          });
+        }
+      },
+    });
 
     // Add markers (signals and trades)
     const markers = [];
