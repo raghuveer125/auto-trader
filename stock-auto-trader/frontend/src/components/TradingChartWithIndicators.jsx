@@ -15,6 +15,7 @@ const TradingChartWithIndicators = ({
   const indicatorChartContainerRef = useRef(null);
   const priceChartRef = useRef(null);
   const indicatorChartRef = useRef(null);
+  const tooltipRef = useRef(null);
 
   // Determine if we need a separate indicator panel
   const needsIndicatorPanel = strategyName === 'MACD' || strategyName === 'RSI';
@@ -144,6 +145,27 @@ const TradingChartWithIndicators = ({
     priceChartRef.current = priceChart;
     console.log(`✅ Price chart created successfully`);
 
+    // Create tooltip for OHLCV display
+    const tooltip = document.createElement('div');
+    tooltip.style.cssText = `
+      position: absolute;
+      top: 8px;
+      left: 8px;
+      background: rgba(26, 34, 52, 0.95);
+      color: #94a3b8;
+      padding: 8px 12px;
+      border-radius: 4px;
+      font-size: 12px;
+      font-family: monospace;
+      line-height: 1.6;
+      pointer-events: none;
+      z-index: 10;
+      border: 1px solid #2d3748;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.3);
+    `;
+    priceChartContainerRef.current.appendChild(tooltip);
+    tooltipRef.current = tooltip;
+
     // Add candlestick series
     const candlestickSeries = priceChart.addCandlestickSeries({
       upColor: '#10b981',
@@ -268,6 +290,48 @@ const TradingChartWithIndicators = ({
       markers.sort((a, b) => a.time - b.time);
       candlestickSeries.setMarkers(markers);
     }
+
+    // Add crosshair move handler to show OHLCV on hover
+    priceChart.subscribeCrosshairMove((param) => {
+      if (!tooltip) return;
+
+      if (
+        param.point === undefined ||
+        !param.time ||
+        param.point.x < 0 ||
+        param.point.y < 0
+      ) {
+        tooltip.style.display = 'none';
+        return;
+      }
+
+      const data = param.seriesData.get(candlestickSeries);
+      if (!data) {
+        tooltip.style.display = 'none';
+        return;
+      }
+
+      const date = new Date(param.time * 1000);
+      const timeStr = date.toLocaleString('en-IN', {
+        day: '2-digit',
+        month: 'short',
+        hour: '2-digit',
+        minute: '2-digit',
+        timeZone: 'Asia/Kolkata'
+      });
+
+      const priceColor = data.close >= data.open ? '#10b981' : '#ef4444';
+
+      tooltip.innerHTML = `
+        <div style="margin-bottom: 4px; font-weight: 600; color: #cbd5e1;">${timeStr}</div>
+        <div>O: <span style="color: #94a3b8;">${data.open.toFixed(2)}</span></div>
+        <div>H: <span style="color: #10b981;">${data.high.toFixed(2)}</span></div>
+        <div>L: <span style="color: #ef4444;">${data.low.toFixed(2)}</span></div>
+        <div>C: <span style="color: ${priceColor}; font-weight: 600;">${data.close.toFixed(2)}</span></div>
+      `;
+
+      tooltip.style.display = 'block';
+    });
 
     // Add overlay indicators (MA, Bollinger Bands)
     if (indicators && strategyName) {
@@ -890,6 +954,12 @@ const TradingChartWithIndicators = ({
     // Cleanup
     return () => {
       window.removeEventListener('resize', handleResize);
+
+      // Remove tooltip
+      if (tooltipRef.current && priceChartContainerRef.current) {
+        priceChartContainerRef.current.removeChild(tooltipRef.current);
+        tooltipRef.current = null;
+      }
 
       // Remove wheel and mouse event listeners for chart sync
       if (indicatorChart) {
