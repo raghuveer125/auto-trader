@@ -30,10 +30,11 @@ const TradingChartWithIndicators = ({
       strategyName
     });
 
-    if (!priceChartContainerRef.current || !data || data.length === 0) {
+    if (!priceChartContainerRef.current || !data || !Array.isArray(data) || data.length === 0) {
       console.warn('⚠️ Chart initialization skipped - missing ref or data', {
         ref: !!priceChartContainerRef.current,
         data: !!data,
+        isArray: Array.isArray(data),
         length: data?.length
       });
       return;

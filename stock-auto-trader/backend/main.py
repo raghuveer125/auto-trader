@@ -297,12 +297,15 @@ def sync_stock_candles(
             raise HTTPException(status_code=400, detail="Invalid timeframe. Use: 1m, 5m, 15m, 30m, 1h, 2h, 3h, 4h, 5h, 1d")
         try:
             result = sync_candles(db, symbol, tf, full_sync)
-        except Exception:
+        except Exception as e:
+            # Rollback any pending transactions on error
+            db.rollback()
             return {
-                "success": True,
+                "success": False,
                 "symbol": symbol.upper(),
                 "timeframe": timeframe,
-                "new_candles": 0
+                "new_candles": 0,
+                "error": str(e)
             }
 
 

@@ -29,7 +29,7 @@ def calculate_indicators_for_candles(
         candle_ids: Optional list of specific candle IDs to calculate for.
                    If None, calculates for all candles missing indicators.
     """
-    # Get candles for this stock/timeframe
+    # Get candles for this stock/timeframe (ordered for proper indicator calculation)
     candles = (
         db.query(Candle)
         .filter(Candle.stock_id == stock_id, Candle.timeframe == timeframe)
@@ -325,7 +325,7 @@ def _calculate_mtf_ema(df: pd.DataFrame) -> pd.DataFrame:
     for period in ema_periods:
         ema = df["close"].ewm(span=period, adjust=False).mean()
         trend_up = ema > ema.shift(2)
-        if trend_up.iloc[-1]:
+        if len(trend_up) > 0 and trend_up.iloc[-1]:
             bullish += 1
         else:
             bearish += 1

@@ -84,13 +84,13 @@ class Trade(Base):
     __tablename__ = "trades"
 
     id = Column(Integer, primary_key=True, autoincrement=True)
-    stock_id = Column(Integer, ForeignKey("stocks.id"), nullable=False)
+    stock_id = Column(Integer, ForeignKey("stocks.id"), nullable=False, index=True)
     trade_type = Column(Enum(TradeType, native_enum=False), nullable=False)
     strategy = Column(Enum(StrategyType, native_enum=False), nullable=False)
     quantity = Column(Float, nullable=False)
     price = Column(Float, nullable=False)
     total_value = Column(Float, nullable=False)
-    timestamp = Column(DateTime, default=datetime.utcnow)
+    timestamp = Column(DateTime, default=datetime.utcnow, index=True)
     notes = Column(String(500))
     
     # Relationships
@@ -127,8 +127,8 @@ class IndicatorValue(Base):
     __tablename__ = "indicator_values"
 
     id = Column(Integer, primary_key=True, autoincrement=True)
-    candle_id = Column(Integer, ForeignKey("candles.id"), nullable=False)
-    strategy = Column(String(20), nullable=False)  # MACD, RSI, etc.
+    candle_id = Column(Integer, ForeignKey("candles.id"), nullable=False, index=True)
+    strategy = Column(String(20), nullable=False, index=True)  # MACD, RSI, etc.
 
     # Common indicator fields
     signal = Column(String(10))  # BUY, SELL, HOLD

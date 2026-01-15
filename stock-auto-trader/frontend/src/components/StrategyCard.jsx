@@ -66,17 +66,12 @@ const StrategyCard = ({ strategy, signal: initialSignal, candles: initialCandles
   const dropdownRef = useRef(null);
   const cardRef = useRef(null);
 
-  // Reset state when symbol changes
+  // Fetch data whenever symbol, strategy, or timeframe changes
   useEffect(() => {
-    setChartCandles([]);
-    setChartSignal(null);
     setSelectedTimeframe(globalTimeframe);
-  }, [symbol, globalTimeframe]);
-
-  // Fetch data whenever timeframe or symbol changes (always fetch via API, never use cached data)
-  useEffect(() => {
+    // Always fetch fresh data when symbol, strategy, or timeframe changes
     fetchCandlesForTimeframe(globalTimeframe);
-  }, [symbol, globalTimeframe]);
+  }, [symbol, strategy, globalTimeframe]);
 
   // Close dropdown when clicking outside
   useEffect(() => {
@@ -101,6 +96,17 @@ const StrategyCard = ({ strategy, signal: initialSignal, candles: initialCandles
 
     try {
       setLoading(true);
+
+      // STEP 1: Sync missing candles from API (ensures data is up-to-date)
+      // This respects market hours: crypto 24/7, India market 9:15-3:30, US market 9:30-4:00
+      console.log(`🔄 Syncing missing candles for ${symbol} ${timeframe}...`);
+      try {
+        await candlesAPI.sync(symbol, timeframe, false);
+        console.log(`✅ Sync complete for ${symbol} ${timeframe}`);
+      } catch (syncError) {
+        console.warn(`⚠️ Sync warning: ${syncError.message}`);
+        // Continue anyway - missing data is okay if sync fails
+      }
 
       // For MTF_EMA, always fetch from signals API (which has trend_dashboard for all timeframes)
       // For other strategies, fetch from indicators API
@@ -234,8 +240,8 @@ const StrategyCard = ({ strategy, signal: initialSignal, candles: initialCandles
       timestamps: strategyIndicators.timestamps || [],
     };
 
-    const lastCandle = candles[candles.length - 1];
-    const price = lastCandle?.close;
+    const lastCandle = candles && candles.length > 0 ? candles[candles.length - 1] : null;
+    const price = lastCandle?.close || 0;
 
     // Add strategy-specific indicator data
     if (strat === 'MACD') {

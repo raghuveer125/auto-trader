@@ -33,14 +33,20 @@ class RSIStrategy(BaseStrategy):
         avg_gain = gain.ewm(span=self.period, adjust=False).mean()
         avg_loss = loss.ewm(span=self.period, adjust=False).mean()
         
+        # Protect against division by zero
+        avg_loss = avg_loss.replace(0, 1e-10)
         rs = avg_gain / avg_loss
         rsi = 100 - (100 / (1 + rs))
         
         return rsi
     
     def calculate(self, df: pd.DataFrame) -> Dict:
-        if len(df) < self.period + 1:
+        if df is None or df.empty or len(df) < self.period + 1:
             return self.get_result(Signal.HOLD, 0, "Insufficient data for RSI calculation")
+        
+        # Validate required columns exist
+        if 'close' not in df.columns or 'timestamp' not in df.columns:
+            return self.get_result(Signal.HOLD, 0, "Missing required columns in DataFrame")
         
         rsi = self.calculate_rsi(df['close'])
         

@@ -68,13 +68,15 @@ def get_or_create_stock(db: Session, symbol: str) -> Stock:
 
 
 def get_latest_candle_timestamp(db: Session, stock_id: int, timeframe: TimeFrame) -> Optional[datetime]:
-    """Get the timestamp of the latest candle in DB"""
+    """Get the timestamp of the latest candle in DB for incremental sync"""
     latest = (
         db.query(Candle)
         .filter(Candle.stock_id == stock_id, Candle.timeframe == timeframe)
         .order_by(Candle.timestamp.desc())
         .first()
     )
+    if latest:
+        print(f"📅 Latest candle in DB: {latest.timestamp} for timeframe {timeframe.value}")
     return latest.timestamp if latest else None
 
 
@@ -141,7 +143,13 @@ def fetch_candles_from_yahoo_api(
     if not timestamps:
         return []
     
-    quote = result["indicators"]["quote"][0]
+    # Validate quote data exists before accessing
+    indicators = result.get("indicators", {})
+    quotes = indicators.get("quote", [])
+    if not quotes or len(quotes) == 0:
+        return []
+    
+    quote = quotes[0]
     
     candles = []
     for i, ts in enumerate(timestamps):
@@ -211,7 +219,13 @@ def _fetch_and_resample_candles(
     if not timestamps:
         return []
 
-    quote = result["indicators"]["quote"][0]
+    # Validate quote data exists before accessing
+    indicators = result.get("indicators", {})
+    quotes = indicators.get("quote", [])
+    if not quotes or len(quotes) == 0:
+        return []
+    
+    quote = quotes[0]
 
     # Build DataFrame for resampling
     rows = []
@@ -290,15 +304,19 @@ def sync_candles(
     # Determine start timestamp for sync
     start_timestamp = None
     latest_timestamp = None
+    sync_type = "FULL"
+    
     if not full_sync:
         latest_timestamp = get_latest_candle_timestamp(db, stock.id, timeframe)
         if latest_timestamp:
             # Start from latest + 1 second to avoid duplicates
             start_timestamp = int(latest_timestamp.timestamp()) + 1
+            sync_type = "INCREMENTAL"
+            print(f"🔄 {sync_type} sync: Fetching data after {latest_timestamp}")
 
             # Smart skip: For intraday timeframes, skip if latest candle is very recent
             # This avoids unnecessary API calls when we know there's no new data
-            now = datetime.now()
+            now = datetime.utcnow()
             time_diff = (now - latest_timestamp).total_seconds()
 
             # Define minimum time before checking for new candles
@@ -319,15 +337,20 @@ def sync_candles(
 
             # Skip API call if latest candle is too recent
             if timeframe != TimeFrame.M1 and time_diff < min_interval:
+                print(f"⏭️  Skipping sync: Latest candle is only {int(time_diff)}s old (min: {min_interval}s)")
                 return {
                     "success": True,
                     "symbol": symbol,
                     "timeframe": timeframe.value,
                     "new_candles": 0,
+                    "sync_type": "SKIPPED",
                     "message": f"No new candles expected (last candle: {int(time_diff)}s ago, min interval: {min_interval}s)"
                 }
+    else:
+        print(f"🔄 {sync_type} sync: Fetching all available history")
 
     # Fetch from API (Yahoo Finance or Binance for crypto)
+    print(f"📡 Fetching from API: {symbol} {timeframe.value} (start: {start_timestamp or 'all history'})")
     try:
         candles_data = fetch_candles_from_yahoo_api(symbol, timeframe, start_timestamp)
     except Exception:
@@ -366,13 +389,14 @@ def sync_candles(
     skipped_count = len(candles_data) - len(new_candles)
 
     if not new_candles:
-        return {
+        print(f\"ℹ️  No new candles: {len(candles_data)} fetched, all already in DB\")\n        return {
             "success": True,
             "symbol": symbol,
             "timeframe": timeframe.value,
             "new_candles": 0,
             "skipped": skipped_count,
             "total_fetched": len(candles_data),
+            "sync_type": sync_type,
             "message": "All candles already exist in database"
         }
 
@@ -394,13 +418,15 @@ def sync_candles(
     db.bulk_save_objects(candles_to_insert)
     db.commit()
 
-    return {
+    # Log sync results
+    print(f\"✅ Sync complete: {len(new_candles)} new, {skipped_count} skipped, {len(candles_data)} total fetched\")\n\n    return {
         "success": True,
         "symbol": symbol,
         "timeframe": timeframe.value,
         "new_candles": len(new_candles),
         "skipped": skipped_count,
         "total_fetched": len(candles_data),
+        "sync_type": sync_type,
         "latest_timestamp": candles_data[-1]["timestamp"].isoformat() if candles_data else None
     }
 

@@ -141,6 +141,25 @@ def fetch_binance_candles(
     if not interval:
         raise Exception(f"Unsupported timeframe for Binance: {timeframe.value}")
 
+    # Limit data range for 1m timeframe to prevent excessive API calls
+    # BUT respect incremental sync - if we have existing data, only fetch new data
+    if not start_timestamp:
+        if timeframe == TimeFrame.M1:
+            # 1m: Last 7 days only for FULL sync
+            start_timestamp = int((datetime.utcnow() - timedelta(days=7)).timestamp())
+            print(f"⚠️  FULL sync: Limiting 1m data to last 7 days for {binance_symbol}")
+        elif timeframe == TimeFrame.M5:
+            # 5m: Last 30 days for FULL sync
+            start_timestamp = int((datetime.utcnow() - timedelta(days=30)).timestamp())
+            print(f"⚠️  FULL sync: Limiting 5m data to last 30 days for {binance_symbol}")
+        elif timeframe in [TimeFrame.M15, TimeFrame.M30]:
+            # 15m, 30m: Last 60 days for FULL sync
+            start_timestamp = int((datetime.utcnow() - timedelta(days=60)).timestamp())
+            print(f"⚠️  FULL sync: Limiting {timeframe.value} data to last 60 days for {binance_symbol}")
+    else:
+        # Incremental sync - fetch from start_timestamp onwards
+        print(f"🔄 INCREMENTAL sync: Fetching {binance_symbol} {timeframe.value} from timestamp {start_timestamp}")
+
     url = f"{BINANCE_API_URL}/klines"
 
     params = {
@@ -160,19 +179,35 @@ def fetch_binance_candles(
         headers["X-MBX-APIKEY"] = api_key
 
     all_candles = []
+    max_requests = 20  # Prevent infinite loops (max 20,000 candles)
+    request_count = 0
 
     # Binance returns max 1000 candles per request, so we may need multiple requests
-    while True:
-        response = requests.get(url, params=params, headers=headers, timeout=30)
+    while request_count < max_requests:
+        request_count += 1
+        
+        try:
+            response = requests.get(url, params=params, headers=headers, timeout=30)
+        except requests.exceptions.Timeout:
+            print(f"⚠️  Binance API timeout on request {request_count}, returning partial data")
+            break
+        except Exception as e:
+            print(f"❌ Binance API error on request {request_count}: {str(e)}")
+            break
 
         if response.status_code != 200:
             error_msg = response.json().get("msg", response.text) if response.text else f"Status {response.status_code}"
-            raise Exception(f"Binance API error: {error_msg}")
+            print(f"❌ Binance API error (request {request_count}): {error_msg}")
+            break
 
         data = response.json()
 
         if not data:
             break
+
+        # Progress logging
+        if request_count == 1 or request_count % 5 == 0:
+            print(f"📊 Fetched {len(all_candles) + len(data)} candles for {binance_symbol} {timeframe.value} (request {request_count})")
 
         for kline in data:
             # Binance kline format:
@@ -199,9 +234,20 @@ def fetch_binance_candles(
             break
 
         # Update startTime for next request (last candle's close time + 1)
+        if not data or len(data) == 0 or len(data[-1]) < 7:
+            break
         last_close_time = data[-1][6]
         params["startTime"] = last_close_time + 1
+    
+    # Warn if we hit the max request limit
+    if request_count >= max_requests:
+        print(f"⚠️  Hit max request limit ({max_requests}) for {binance_symbol} {timeframe.value}. Returning {len(all_candles)} candles.")
 
+    print(f"✅ Completed: {len(all_candles)} total candles for {binance_symbol} {timeframe.value}")
+    return all_candles
+        print(f"⚠️  Hit max request limit ({max_requests}) for {binance_symbol} {timeframe.value}. Consider increasing limit or reducing timeframe.")
+
+    print(f"✅ Completed: {len(all_candles)} total candles for {binance_symbol} {timeframe.value}")
     return all_candles
 
 
@@ -239,13 +285,25 @@ def _fetch_and_resample_binance_candles(
         headers["X-MBX-APIKEY"] = api_key
 
     all_candles = []
+    max_requests = 20  # Prevent infinite loops
+    request_count = 0
 
-    while True:
-        response = requests.get(url, params=params, headers=headers, timeout=30)
+    while request_count < max_requests:
+        request_count += 1
+        
+        try:
+            response = requests.get(url, params=params, headers=headers, timeout=30)
+        except requests.exceptions.Timeout:
+            print(f"⚠️  Binance API timeout on resample request {request_count}, returning partial data")
+            break
+        except Exception as e:
+            print(f"❌ Binance API error on resample request {request_count}: {str(e)}")
+            break
 
         if response.status_code != 200:
             error_msg = response.json().get("msg", response.text) if response.text else f"Status {response.status_code}"
-            raise Exception(f"Binance API error: {error_msg}")
+            print(f"❌ Binance API error (resample request {request_count}): {error_msg}")
+            break
 
         data = response.json()
 
@@ -269,8 +327,13 @@ def _fetch_and_resample_binance_candles(
         if len(data) < 1000:
             break
 
+        if not data or len(data) == 0 or len(data[-1]) < 7:
+            break
         last_close_time = data[-1][6]
         params["startTime"] = last_close_time + 1
+    
+    if request_count >= max_requests:
+        print(f"⚠️  Hit max request limit ({max_requests}) for resample operation")
 
     if not all_candles:
         return []

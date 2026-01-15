@@ -20,8 +20,12 @@ class MACDStrategy(BaseStrategy):
         self.signal_period = signal_period
     
     def calculate(self, df: pd.DataFrame) -> Dict:
-        if len(df) < self.slow_period + self.signal_period:
+        if df is None or df.empty or len(df) < self.slow_period + self.signal_period:
             return self.get_result(Signal.HOLD, 0, "Insufficient data for MACD calculation")
+        
+        # Validate required columns exist
+        if 'close' not in df.columns or 'timestamp' not in df.columns:
+            return self.get_result(Signal.HOLD, 0, "Missing required columns in DataFrame")
         
         # Calculate MACD
         ema_fast = df['close'].ewm(span=self.fast_period, adjust=False).mean()
