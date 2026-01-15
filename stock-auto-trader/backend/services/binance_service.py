@@ -169,25 +169,11 @@ def fetch_binance_candles(
         "interval": interval,
     }
 
-    # For incremental sync, limit the time window to avoid fetching too much data
+    # For incremental sync, use reasonable limit without endTime
+    # endTime can cause unexpected behavior when combined with startTime + limit
     if is_incremental:
-        now_ts = int(datetime.utcnow().timestamp())
-        # Add endTime to strictly limit the fetch window
-        params["endTime"] = now_ts * 1000
-        
-        # Calculate reasonable limit based on timeframe
-        if timeframe == TimeFrame.M1:
-            # 1m: Max 6 hours of data (360 candles)
-            params["limit"] = 360
-        elif timeframe == TimeFrame.M5:
-            # 5m: Max 12 hours of data (144 candles)
-            params["limit"] = 144
-        elif timeframe == TimeFrame.M15:
-            # 15m: Max 24 hours of data (96 candles)
-            params["limit"] = 96
-        else:
-            # Other timeframes: use smaller limit
-            params["limit"] = 100
+        # Use Binance max limit for efficiency
+        params["limit"] = 1000
     else:
         # Full sync: use default limit
         params["limit"] = limit
@@ -203,8 +189,8 @@ def fetch_binance_candles(
         headers["X-MBX-APIKEY"] = api_key
 
     all_candles = []
-    # For incremental sync, only make 1 request since we have strict limits
-    max_requests = 1 if is_incremental else 20
+    # For incremental sync with endTime set, usually only need 1-2 requests
+    max_requests = 3 if is_incremental else 20
     request_count = 0
 
     # Binance returns max 1000 candles per request, so we may need multiple requests

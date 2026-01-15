@@ -309,31 +309,33 @@ def sync_stock_candles(
             }
 
 
-        # Calculate indicators after sync
+        # ALWAYS calculate indicators after sync (mandatory for GUI performance)
         if stock:
             try:
                 indicator_result = calculate_indicators_for_candles(db, stock.id, tf)
                 result["indicators_calculated"] = indicator_result
             except Exception as e:
-                result["indicators_skipped"] = str(e)
-
+                # Don't skip - raise error to alert about missing indicators
+                result["indicators_error"] = str(e)
+                print(f"⚠️ Failed to calculate indicators for {symbol} {timeframe}: {str(e)}")
 
         return result
     else:
         results = sync_all_timeframes(db, symbol, full_sync)
 
-        # Calculate indicators for all timeframes in parallel (only for timeframes with new candles)
+        # ALWAYS calculate indicators for ALL timeframes (mandatory for GUI performance)
+        # Even if no new candles, ensures indicators are available for existing data
         if stock:
             from concurrent.futures import ThreadPoolExecutor, as_completed
             from database import SessionLocal
 
-            # Find timeframes that have new candles
-            timeframes_with_new_candles = []
+            # Get all successful timeframe syncs (regardless of new candles count)
+            timeframes_to_calculate = []
             for r in results:
-                if r.get("success") and r.get("new_candles", 0) > 0:
+                if r.get("success"):
                     tf_name = r.get("timeframe")
                     if tf_name in tf_map:
-                        timeframes_with_new_candles.append((tf_name, tf_map[tf_name]))
+                        timeframes_to_calculate.append((tf_name, tf_map[tf_name]))
 
             def calc_indicators_for_tf(tf_name: str, tf: TimeFrame):
                 thread_db = SessionLocal()
@@ -343,12 +345,11 @@ def sync_stock_candles(
                 finally:
                     thread_db.close()
 
-
-            # Only calculate indicators for timeframes with new candles
-            if timeframes_with_new_candles:
+            # Calculate indicators for all timeframes
+            if timeframes_to_calculate:
                 with ThreadPoolExecutor(max_workers=5) as executor:
                     futures = {executor.submit(calc_indicators_for_tf, tf_name, tf): tf_name
-                              for tf_name, tf in timeframes_with_new_candles}
+                              for tf_name, tf in timeframes_to_calculate}
 
                     for future in as_completed(futures):
                         try:
@@ -358,7 +359,11 @@ def sync_stock_candles(
                                 if r.get("timeframe") == tf_name:
                                     r["indicators_calculated"] = indicator_result
                         except Exception as e:
-                            print(f"Error calculating indicators: {str(e)}")
+                            tf_name = futures.get(future)
+                            print(f"⚠️ Failed to calculate indicators for {tf_name}: {str(e)}")
+                            for r in results:
+                                if r.get("timeframe") == tf_name:
+                                    r["indicators_error"] = str(e)
 
         return {"symbol": symbol.upper(), "results": results}
 
@@ -616,36 +621,60 @@ def _get_stored_indicator_values(db: Session, stock_id: int, timeframe: TimeFram
     """
     Fetch stored indicator values from database instead of recalculating.
     Returns indicator data for chart rendering.
+    
+    Optimized to use a single query with join for better performance.
     """
-    from sqlalchemy import desc
+    from sqlalchemy import desc, and_
 
-    # Get candles with their indicator values
-    candles_query = (
-        db.query(Candle)
-        .filter(Candle.stock_id == stock_id, Candle.timeframe == timeframe)
-        .order_by(desc(Candle.timestamp))
-        .limit(limit)
-    )
-    candles = candles_query.all()
+    # Single query: get candles with their indicators (only for requested strategy if specified)
+    if strategy:
+        # Optimized: Join with indicators filtered by strategy
+        query = (
+            db.query(Candle, IndicatorValue)
+            .outerjoin(
+                IndicatorValue,
+                and_(
+                    IndicatorValue.candle_id == Candle.id,
+                    IndicatorValue.strategy == strategy.upper()
+                )
+            )
+            .filter(Candle.stock_id == stock_id, Candle.timeframe == timeframe)
+            .order_by(desc(Candle.timestamp))
+            .limit(limit)
+        )
+    else:
+        # Get all indicators for all strategies
+        query = (
+            db.query(Candle, IndicatorValue)
+            .outerjoin(IndicatorValue, IndicatorValue.candle_id == Candle.id)
+            .filter(Candle.stock_id == stock_id, Candle.timeframe == timeframe)
+            .order_by(desc(Candle.timestamp))
+            .limit(limit)
+        )
 
-    if not candles:
+    results = query.all()
+
+    if not results:
         return {}
 
-    # Get candle IDs
-    candle_ids = [c.id for c in candles]
-
-    # Fetch indicator values for these candles
-    indicator_query = db.query(IndicatorValue).filter(IndicatorValue.candle_id.in_(candle_ids))
-    if strategy:
-        indicator_query = indicator_query.filter(IndicatorValue.strategy == strategy.upper())
-    indicators = indicator_query.all()
-
     # Build lookup map: candle_id -> {strategy -> indicator_data}
+    candle_map = {}
     indicator_map = {}
-    for ind in indicators:
-        if ind.candle_id not in indicator_map:
-            indicator_map[ind.candle_id] = {}
-        indicator_map[ind.candle_id][ind.strategy] = ind
+    
+    for candle, indicator in results:
+        if candle.id not in candle_map:
+            candle_map[candle.id] = candle
+        
+        if indicator:
+            if candle.id not in indicator_map:
+                indicator_map[candle.id] = {}
+            indicator_map[candle.id][indicator.strategy] = indicator
+
+    # Get unique candles and sort chronologically
+    unique_candles = sorted(candle_map.values(), key=lambda c: c.timestamp)
+    
+    if not unique_candles:
+        return {}
 
     # Build result with candles and their indicators (in chronological order)
     result = {
@@ -654,7 +683,9 @@ def _get_stored_indicator_values(db: Session, stock_id: int, timeframe: TimeFram
     }
 
     # Initialize indicator arrays for each strategy
-    strategies = set(ind.strategy for ind in indicators)
+    strategies = set()
+    for candle_indicators in indicator_map.values():
+        strategies.update(candle_indicators.keys())
     for strat in strategies:
         result["indicators"][strat] = {
             "signal": [],
@@ -732,8 +763,8 @@ def _get_stored_indicator_values(db: Session, stock_id: int, timeframe: TimeFram
                 "fvg_bear_mitigated": []
             })
 
-    # Populate data in chronological order (reverse the desc order)
-    for candle in reversed(candles):
+    # Populate data in chronological order
+    for candle in unique_candles:
         result["candles"].append({
             "timestamp": candle.timestamp.isoformat() + "Z",
             "open": candle.open,

@@ -97,16 +97,10 @@ const StrategyCard = ({ strategy, signal: initialSignal, candles: initialCandles
     try {
       setLoading(true);
 
-      // STEP 1: Sync missing candles from API (ensures data is up-to-date)
-      // This respects market hours: crypto 24/7, India market 9:15-3:30, US market 9:30-4:00
-      console.log(`🔄 Syncing missing candles for ${symbol} ${timeframe}...`);
-      try {
-        await candlesAPI.sync(symbol, timeframe, false);
-        console.log(`✅ Sync complete for ${symbol} ${timeframe}`);
-      } catch (syncError) {
-        console.warn(`⚠️ Sync warning: ${syncError.message}`);
-        // Continue anyway - missing data is okay if sync fails
-      }
+      // STEP 1: Skip sync - let the main dashboard handle syncing
+      // Individual cards should not trigger sync to avoid parallel sync conflicts
+      // console.log(`🔄 Skipping sync for ${symbol} ${timeframe} - handled by dashboard`);
+
 
       // For MTF_EMA, always fetch from signals API (which has trend_dashboard for all timeframes)
       // For other strategies, fetch from indicators API
@@ -123,8 +117,10 @@ const StrategyCard = ({ strategy, signal: initialSignal, candles: initialCandles
 
             // For MTF_EMA, get candles from the requested timeframe using indicators API
             // Don't filter by strategy - just get candles for the timeframe
+            // Use smaller limit for intraday timeframes
+            const candleLimit = timeframe === '1m' ? 100 : timeframe === '5m' ? 150 : 200;
             try {
-              const candlesFromIndicators = await indicatorsAPI.get(symbol, timeframe, null, 200);
+              const candlesFromIndicators = await indicatorsAPI.get(symbol, timeframe, null, candleLimit);
               const candles = candlesFromIndicators.data.candles || [];
               setChartCandles(candles);
               if (candles.length === 0) {
@@ -174,7 +170,9 @@ const StrategyCard = ({ strategy, signal: initialSignal, candles: initialCandles
       }
 
       // For other strategies, use indicators API
-      const indicatorsRes = await indicatorsAPI.get(symbol, timeframe, strategy, 200);
+      // Use smaller limit for intraday timeframes to improve performance
+      const candleLimit = timeframe === '1m' ? 100 : timeframe === '5m' ? 150 : 200;
+      const indicatorsRes = await indicatorsAPI.get(symbol, timeframe, strategy, candleLimit);
       const { candles, indicators, strategies } = indicatorsRes.data;
 
       // Debug: Log candle data for Bollinger Band to investigate price mismatch
@@ -185,27 +183,20 @@ const StrategyCard = ({ strategy, signal: initialSignal, candles: initialCandles
         console.log(`   Total candles: ${candles.length}`);
       }
 
-      // If candles exist but no indicators, calculate them first
+      // If candles exist but no indicators, show error - DO NOT calculate here
+      // Calculation should happen during sync only
       if (candles && candles.length > 0 && strategies.length === 0) {
-        console.log(`📊 Indicators missing for ${symbol} ${timeframe} ${strategy}, calculating...`);
-        try {
-          await indicatorsAPI.calculate(symbol, timeframe);
-          console.log(`✅ Indicators calculated for ${symbol} ${timeframe}`);
-          // Retry fetching after calculation
-          const retryRes = await indicatorsAPI.get(symbol, timeframe, strategy, 200);
-          const retryData = retryRes.data;
-          setChartCandles(retryData.candles || []);
-
-          const retryStrategyIndicators = retryData.indicators?.[strategy] || {};
-          if (retryStrategyIndicators.signal && retryStrategyIndicators.signal.length > 0) {
-            await _buildAndSetChartSignal(strategy, retryStrategyIndicators, retryData.candles);
-          }
-          return;
-        } catch (calcError) {
-          console.error('Error calculating indicators:', calcError);
-          setChartCandles(candles);
-          return;
-        }
+        console.error(`❌ Indicators missing for ${symbol} ${timeframe} ${strategy}`);
+        console.error(`⚠️ Please sync data to calculate indicators`);
+        setChartCandles(candles);
+        setChartSignal({
+          strategy: strategy,
+          signal: 'HOLD',
+          strength: 0,
+          reason: 'Indicators not calculated. Please sync data.',
+          indicators: {}
+        });
+        return;
       }
 
       if (candles && candles.length > 0) {

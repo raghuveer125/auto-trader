@@ -271,11 +271,13 @@ def _fetch_and_resample_candles(
     return candles
 
 
-def get_existing_timestamps(db: Session, stock_id: int, timeframe: TimeFrame) -> set:
-    """Get all existing timestamps for a stock/timeframe combination"""
+def get_existing_timestamps(db: Session, stock_id: int, timeframe: TimeFrame, limit: int = 1000) -> set:
+    """Get existing timestamps for a stock/timeframe combination (limited to recent candles)"""
     results = (
         db.query(Candle.timestamp)
         .filter(Candle.stock_id == stock_id, Candle.timeframe == timeframe)
+        .order_by(Candle.timestamp.desc())
+        .limit(limit)
         .all()
     )
     # For daily candles, use date only; for others, truncate to minute
@@ -309,10 +311,24 @@ def sync_candles(
     if not full_sync:
         latest_timestamp = get_latest_candle_timestamp(db, stock.id, timeframe)
         if latest_timestamp:
-            # Start from latest + 1 second to avoid duplicates
-            start_timestamp = int(latest_timestamp.timestamp()) + 1
+            # Start from NEXT candle period to avoid re-fetching the latest candle
+            # Add appropriate interval based on timeframe
+            timeframe_seconds = {
+                TimeFrame.M1: 60,
+                TimeFrame.M5: 300,
+                TimeFrame.M15: 900,
+                TimeFrame.M30: 1800,
+                TimeFrame.H1: 3600,
+                TimeFrame.H2: 7200,
+                TimeFrame.H3: 10800,
+                TimeFrame.H4: 14400,
+                TimeFrame.H5: 18000,
+                TimeFrame.D1: 86400,
+            }
+            interval = timeframe_seconds.get(timeframe, 60)
+            start_timestamp = int(latest_timestamp.timestamp()) + interval
             sync_type = "INCREMENTAL"
-            print(f"🔄 {sync_type} sync: Fetching data after {latest_timestamp}")
+            print(f"🔄 {sync_type} sync: Fetching data after {latest_timestamp} (from timestamp {start_timestamp})")
 
             # Smart skip: For intraday timeframes, skip if latest candle is very recent
             # This avoids unnecessary API calls when we know there's no new data
@@ -372,7 +388,11 @@ def sync_candles(
         }
 
     # Get all existing timestamps for this stock/timeframe to check duplicates
-    existing_timestamps = get_existing_timestamps(db, stock.id, timeframe)
+    existing_timestamps = get_existing_timestamps(db, stock.id, timeframe, limit=500)
+    
+    print(f"🔍 Checking {len(candles_data)} fetched candles against {len(existing_timestamps)} existing timestamps")
+    if candles_data and len(candles_data) > 0:
+        print(f"📅 First fetched: {candles_data[0]['timestamp']}, Last fetched: {candles_data[-1]['timestamp']}")
 
     # Filter out candles that already exist
     new_candles = []
