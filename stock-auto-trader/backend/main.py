@@ -10,10 +10,13 @@ import logging
 
 from database import get_db, engine, SessionLocal
 from models import Base, Stock, Candle, Trade, Portfolio, Holding, StrategySettings, TimeFrame, TradeType, StrategyType, IndicatorValue
-from tracing_config import init_tracing, instrument_app
 
 # Initialize tracing
-init_tracing()
+try:
+    from tracing_config import init_tracing, instrument_app
+    init_tracing()
+except Exception as e:
+    print(f"Warning: Tracing initialization failed: {e}")
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -29,7 +32,10 @@ app = FastAPI(
 )
 
 # Instrument the app with OpenTelemetry
-instrument_app(app)
+try:
+    instrument_app(app)
+except Exception as e:
+    print(f"Warning: App instrumentation failed: {e}")
 
 # CORS for React frontend
 app.add_middleware(
