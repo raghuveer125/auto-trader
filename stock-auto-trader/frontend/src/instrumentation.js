@@ -14,6 +14,10 @@ import { SemanticResourceAttributes } from '@opentelemetry/semantic-conventions'
 export function initTracingWeb() {
   const exporter = new OTLPTraceExporter({
     url: import.meta.env.VITE_OTLP_ENDPOINT || 'http://localhost:4318/v1/traces',
+    headers: {
+      // Avoid CORS issues with credentials
+      'Content-Type': 'application/json',
+    },
   });
 
   const resource = Resource.default().merge(
@@ -32,8 +36,21 @@ export function initTracingWeb() {
 
   registerInstrumentations({
     instrumentations: [
-      new FetchInstrumentation(),
-      new XMLHttpRequestInstrumentation(),
+      new FetchInstrumentation({
+        // Don't trace internal OTLP requests to avoid recursion
+        requestHook: (span, request) => {
+          if (request.url?.includes('localhost:4318')) {
+            return false;
+          }
+        },
+      }),
+      new XMLHttpRequestInstrumentation({
+        requestHook: (span, request) => {
+          if (request.url?.includes('localhost:4318')) {
+            return false;
+          }
+        },
+      }),
     ],
   });
 

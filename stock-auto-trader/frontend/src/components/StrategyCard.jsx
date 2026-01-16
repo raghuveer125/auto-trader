@@ -84,8 +84,37 @@ const StrategyCard = ({ strategy, signal: initialSignal, candles: initialCandles
       }
     };
 
+    // Listen for live candle updates from WebSocket
+    const handleLiveCandleUpdate = (event) => {
+      const candleData = event.detail;
+      // Only update if it matches current symbol and timeframe
+      if (candleData.symbol === symbol && candleData.timeframe === selectedTimeframe) {
+        console.log(`📈 Live candle update: ${symbol} ${selectedTimeframe}`, candleData);
+        // Update the last candle in the array if it's the same timestamp, otherwise add new candle
+        setChartCandles(prevCandles => {
+          if (prevCandles.length === 0) return [candleData];
+
+          const lastCandle = prevCandles[prevCandles.length - 1];
+          if (lastCandle.timestamp === candleData.timestamp) {
+            // Update existing candle (still open)
+            const updatedCandles = [...prevCandles];
+            updatedCandles[updatedCandles.length - 1] = candleData;
+            return updatedCandles;
+          } else if (candleData.is_closed && lastCandle.timestamp < candleData.timestamp) {
+            // New closed candle - add it
+            return [...prevCandles, candleData];
+          }
+          return prevCandles;
+        });
+      }
+    };
+
     window.addEventListener('candleSaved', handleCandleSaved);
-    return () => window.removeEventListener('candleSaved', handleCandleSaved);
+    window.addEventListener('liveCandle', handleLiveCandleUpdate);
+    return () => {
+      window.removeEventListener('candleSaved', handleCandleSaved);
+      window.removeEventListener('liveCandle', handleLiveCandleUpdate);
+    };
   }, [symbol, selectedTimeframe]);
 
   // Close dropdown when clicking outside

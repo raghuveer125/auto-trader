@@ -36,6 +36,14 @@ const Dashboard = () => {
   // WebSocket connection for live price updates (only for crypto)
   const handlePriceUpdate = (candleData) => {
     setLivePrice(candleData.close);
+    // Broadcast live candle update to all StrategyCard instances
+    window.dispatchEvent(new CustomEvent('liveCandle', {
+      detail: {
+        symbol: selectedStock,
+        timeframe: globalTimeframe,
+        ...candleData
+      }
+    }));
   };
 
   const { isConnected } = useWebSocket(
