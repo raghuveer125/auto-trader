@@ -61,6 +61,8 @@ export const useWebSocket = (symbol, timeframe, onUpdate, enabled = true, onCand
 
       ws.onmessage = (event) => {
         try {
+          console.log(`🔔 WebSocket message received for ${symbol} ${timeframe}:`, event.data);
+
           // Handle plain text messages (ping/pong)
           if (typeof event.data === 'string' && (event.data === 'ping' || event.data === 'pong')) {
             if (event.data === 'ping') {
@@ -89,10 +91,11 @@ export const useWebSocket = (symbol, timeframe, onUpdate, enabled = true, onCand
 
           // Handle candle update
           if (data.timestamp && data.open !== undefined) {
-            console.log(`📊 Candle update: ${symbol} ${timeframe}`, {
+            console.log(`📊 Candle update received: ${symbol} ${timeframe}`, {
               close: data.close,
               is_closed: data.is_closed,
               time: data.timestamp
+
             });
             onUpdateRef.current(data);
           }

@@ -238,7 +238,7 @@ const TradingChartWithIndicators = ({
     // Format candle data and sort by time
     const formattedData = data
       .map((candle) => ({
-        time: new Date(candle.timestamp).getTime() / 1000,
+        time: Math.floor(new Date(candle.timestamp).getTime() / 1000),
         open: candle.open,
         high: candle.high,
         low: candle.low,
@@ -1111,8 +1111,14 @@ const TradingChartWithIndicators = ({
       close: liveCandle.close
     };
 
-    // Update the chart with live data
-    candlestickSeriesRef.current.update(candleUpdate);
+    // Update the chart with live data - wrap in try-catch in case candle already exists
+    try {
+      candlestickSeriesRef.current.update(candleUpdate);
+    } catch (err) {
+      console.warn(`⚠️ Could not update candle (already exists?):`, err.message);
+      // This can happen if the candle was already added via setData or a previous update
+      // Just log and continue
+    }
 
     // Update the latest values display
     const latest = liveCandle;

@@ -35,8 +35,10 @@ const Dashboard = () => {
 
   // WebSocket connection for live price updates (only for crypto)
   const handlePriceUpdate = (candleData) => {
+    console.log(`💰 Price update received in Dashboard: ${selectedStock} @ ${candleData.close}`);
     setLivePrice(candleData.close);
     // Broadcast live candle update to all StrategyCard instances
+    console.log(`📡 Broadcasting liveCandle event for ${selectedStock} ${globalTimeframe}`);
     window.dispatchEvent(new CustomEvent('liveCandle', {
       detail: {
         symbol: selectedStock,
@@ -97,21 +99,37 @@ const Dashboard = () => {
     fetchInitialData();
   }, []);
 
-  // Fetch stock data when selected stock changes
+  // Fetch stock data when selected stock or timeframe changes
   useEffect(() => {
     if (!selectedStock) return;
 
     const fetchStockData = async () => {
       try {
-        console.log(`📊 Fetching data for ${selectedStock}...`);
+        console.log(`📊 Fetching data for ${selectedStock} at ${globalTimeframe}...`);
+
+        // Auto-sync for crypto symbols
+        const isCrypto = isCryptoSymbol(selectedStock);
+        if (isCrypto) {
+          console.log(`🔄 Auto-syncing data for crypto symbol ${selectedStock} at ${globalTimeframe}...`);
+          try {
+            setSyncing(true);
+            await candlesAPI.sync(selectedStock, globalTimeframe, false);
+            console.log(`✅ Auto-sync completed for ${selectedStock} ${globalTimeframe}`);
+            setSyncing(false);
+          } catch (syncError) {
+            console.error(`⚠️ Auto-sync failed for ${selectedStock}:`, syncError);
+            setSyncing(false);
+            // Continue with fetching even if sync fails
+          }
+        }
 
         // Fetch candles
-        const candlesRes = await candlesAPI.get(selectedStock, '1d', 100);
+        const candlesRes = await candlesAPI.get(selectedStock, globalTimeframe, 100);
         console.log('✅ Candles loaded:', candlesRes.data.length, 'candles');
         setCandles(candlesRes.data);
 
         // Fetch signals for all strategies
-        const signalsRes = await signalsAPI.get(selectedStock, '1d');
+        const signalsRes = await signalsAPI.get(selectedStock, globalTimeframe);
         console.log('✅ Signals loaded:', signalsRes.data);
         setSignals(signalsRes.data.signals || []);
 
@@ -132,7 +150,7 @@ const Dashboard = () => {
     };
 
     fetchStockData();
-  }, [selectedStock]);
+  }, [selectedStock, globalTimeframe]);
 
   const handleSyncCandles = async () => {
     if (!selectedStock) return;

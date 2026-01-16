@@ -68,6 +68,7 @@ const StrategyCard = ({ strategy, signal: initialSignal, candles: initialCandles
 
   // Fetch data whenever symbol, strategy, or timeframe changes
   useEffect(() => {
+    console.log(`🔄 StrategyCard useEffect triggered: symbol=${symbol}, strategy=${strategy}, globalTimeframe=${globalTimeframe}`);
     setSelectedTimeframe(globalTimeframe);
     // Always fetch fresh data when symbol, strategy, or timeframe changes
     fetchCandlesForTimeframe(globalTimeframe);
@@ -92,17 +93,35 @@ const StrategyCard = ({ strategy, signal: initialSignal, candles: initialCandles
         console.log(`📈 Live candle update: ${symbol} ${selectedTimeframe}`, candleData);
         // Update the last candle in the array if it's the same timestamp, otherwise add new candle
         setChartCandles(prevCandles => {
-          if (prevCandles.length === 0) return [candleData];
+          if (prevCandles.length === 0) {
+            console.log(`📈 Adding first live candle`);
+            return [candleData];
+          }
 
           const lastCandle = prevCandles[prevCandles.length - 1];
-          if (lastCandle.timestamp === candleData.timestamp) {
+          // Compare timestamps carefully - handle both string and number formats
+          const lastTime = typeof lastCandle.timestamp === 'string'
+            ? lastCandle.timestamp
+            : lastCandle.timestamp?.toString?.();
+          const newTime = typeof candleData.timestamp === 'string'
+            ? candleData.timestamp
+            : candleData.timestamp?.toString?.();
+
+          if (lastTime === newTime) {
             // Update existing candle (still open)
+            console.log(`📈 Updating existing candle at ${newTime}`);
             const updatedCandles = [...prevCandles];
             updatedCandles[updatedCandles.length - 1] = candleData;
             return updatedCandles;
-          } else if (candleData.is_closed && lastCandle.timestamp < candleData.timestamp) {
-            // New closed candle - add it
-            return [...prevCandles, candleData];
+          } else if (candleData.is_closed) {
+            // New closed candle - check timestamp order
+            if (lastTime < newTime) {
+              console.log(`📈 Adding new closed candle at ${newTime}`);
+              return [...prevCandles, candleData];
+            } else {
+              console.warn(`⚠️ Ignoring out-of-order candle: last=${lastTime}, new=${newTime}`);
+              return prevCandles;
+            }
           }
           return prevCandles;
         });
@@ -140,6 +159,7 @@ const StrategyCard = ({ strategy, signal: initialSignal, candles: initialCandles
 
     try {
       setLoading(true);
+      console.log(`📊 StrategyCard.fetchCandlesForTimeframe: ${symbol} ${timeframe} strategy=${strategy}`);
 
       // STEP 1: Skip sync - let the main dashboard handle syncing
       // Individual cards should not trigger sync to avoid parallel sync conflicts
@@ -165,7 +185,10 @@ const StrategyCard = ({ strategy, signal: initialSignal, candles: initialCandles
             const candleLimit = timeframe === '1m' ? 100 : timeframe === '5m' ? 150 : 200;
             try {
               const candlesFromIndicators = await indicatorsAPI.get(symbol, timeframe, null, candleLimit);
-              const candles = candlesFromIndicators.data.candles || [];
+              let candles = candlesFromIndicators.data.candles || [];
+              // Ensure candles are sorted chronologically
+              candles = candles.sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));
+              console.log(`✅ Loaded ${candles.length} candles for ${symbol} ${timeframe}`);
               setChartCandles(candles);
               if (candles.length === 0) {
                 console.warn(`⚠️ No candles found for ${symbol} ${timeframe}`);
@@ -216,8 +239,11 @@ const StrategyCard = ({ strategy, signal: initialSignal, candles: initialCandles
       // For other strategies, use indicators API
       // Use smaller limit for intraday timeframes to improve performance
       const candleLimit = timeframe === '1m' ? 100 : timeframe === '5m' ? 150 : 200;
+      console.log(`📊 Fetching indicators for ${symbol} ${timeframe} ${strategy} (limit=${candleLimit})`);
       const indicatorsRes = await indicatorsAPI.get(symbol, timeframe, strategy, candleLimit);
       const { candles, indicators, strategies } = indicatorsRes.data;
+
+      console.log(`📊 Response received: candles=${candles?.length || 0}, strategies=${strategies?.length || 0}`);
 
       // Debug: Log candle data for Bollinger Band to investigate price mismatch
       if (strategy === 'BOLLINGER' && candles && candles.length > 0) {
@@ -232,7 +258,10 @@ const StrategyCard = ({ strategy, signal: initialSignal, candles: initialCandles
       if (candles && candles.length > 0 && strategies.length === 0) {
         console.error(`❌ Indicators missing for ${symbol} ${timeframe} ${strategy}`);
         console.error(`⚠️ Please sync data to calculate indicators`);
-        setChartCandles(candles);
+        console.log(`📊 Setting ${candles.length} candles (no indicators yet)`);
+        // Ensure candles are sorted chronologically
+        const sortedCandles = candles.sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));
+        setChartCandles(sortedCandles);
         setChartSignal({
           strategy: strategy,
           signal: 'HOLD',
@@ -244,7 +273,10 @@ const StrategyCard = ({ strategy, signal: initialSignal, candles: initialCandles
       }
 
       if (candles && candles.length > 0) {
-        setChartCandles(candles);
+        console.log(`✅ Setting ${candles.length} candles for ${symbol} ${timeframe} ${strategy}`);
+        // Ensure candles are sorted chronologically
+        const sortedCandles = candles.sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));
+        setChartCandles(sortedCandles);
 
         // Build signal object from stored indicators for this strategy
         const strategyIndicators = indicators?.[strategy] || {};
@@ -258,9 +290,11 @@ const StrategyCard = ({ strategy, signal: initialSignal, candles: initialCandles
         setChartCandles([]);
       }
     } catch (error) {
-      console.error('Error fetching indicators:', error);
+      console.error(`❌ Error fetching indicators for ${symbol} ${timeframe} ${strategy}:`, error);
+      console.error(`❌ Error stack:`, error.stack);
       setChartCandles([]);
     } finally {
+      console.log(`🏁 fetchCandlesForTimeframe finished: setting loading=false`);
       setLoading(false);
     }
   };
