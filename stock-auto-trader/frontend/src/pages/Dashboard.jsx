@@ -4,6 +4,7 @@ import Sidebar from '../components/Sidebar';
 import SignalsTable from '../components/SignalsTable';
 import StrategyCard from '../components/StrategyCard';
 import TradesTable from '../components/TradesTable';
+import { useWebSocket } from '../hooks/useWebSocket';
 import { candlesAPI, portfolioAPI, signalsAPI, stocksAPI, tradesAPI } from '../services/api';
 import './Dashboard.css';
 
@@ -21,6 +22,28 @@ const Dashboard = () => {
   const [error, setError] = useState(null);
   const [globalTimeframe, setGlobalTimeframe] = useState('5m');
   const [timeframeDropdownOpen, setTimeframeDropdownOpen] = useState(false);
+  const [livePrice, setLivePrice] = useState(null);
+
+  // Check if symbol is a crypto symbol (supports WebSocket)
+  const isCryptoSymbol = (symbol) => {
+    const cryptoSymbols = ['BTC', 'ETH', 'SOL', 'ADA', 'DOT', 'MATIC', 'AVAX', 'LINK', 'UNI', 'ATOM'];
+    return cryptoSymbols.some(crypto => symbol?.toUpperCase().includes(crypto)) ||
+      symbol?.toUpperCase().endsWith('USDT') ||
+      symbol?.toUpperCase().endsWith('USD');
+  };
+
+  // WebSocket connection for live price updates (only for crypto)
+  const handlePriceUpdate = (candleData) => {
+    setLivePrice(candleData.close);
+  };
+
+  const { isConnected } = useWebSocket(
+    selectedStock,
+    globalTimeframe,
+    handlePriceUpdate,
+    !!selectedStock && isCryptoSymbol(selectedStock),
+    null  // onCandleSaved callback (not needed in Dashboard)
+  );
 
   // Fetch initial data
   useEffect(() => {
@@ -306,8 +329,11 @@ const Dashboard = () => {
                 <div className="stock-price">
                   <span className="price-label">Current Price:</span>
                   <span className="price-value">
-                    ${candles.length > 0 ? candles[candles.length - 1].close.toFixed(2) : '—'}
+                    ${livePrice !== null ? livePrice.toFixed(2) : candles.length > 0 ? candles[candles.length - 1].close.toFixed(2) : '—'}
                   </span>
+                  {isConnected && livePrice !== null && (
+                    <span className="live-indicator" style={{ marginLeft: '8px', color: '#10b981', fontSize: '12px' }}>● Live</span>
+                  )}
                 </div>
               </div>
               <div className="stock-overview-stats">

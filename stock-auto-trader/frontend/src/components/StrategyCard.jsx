@@ -55,8 +55,8 @@ const TIMEFRAMES = [
 const StrategyCard = ({ strategy, signal: initialSignal, candles: initialCandles, trades = [], symbol, globalTimeframe = '5m', onTradeExecuted }) => {
   const [isModalOpen, setIsModalOpen] = useState(false);
 
-  // Timeframe state
-  const [selectedTimeframe, setSelectedTimeframe] = useState('5m');
+  // Timeframe state - initialize with globalTimeframe
+  const [selectedTimeframe, setSelectedTimeframe] = useState(globalTimeframe);
   const [chartCandles, setChartCandles] = useState(initialCandles || []);
   const [chartSignal, setChartSignal] = useState(initialSignal || null);
   const [loading, setLoading] = useState(false);
@@ -72,6 +72,21 @@ const StrategyCard = ({ strategy, signal: initialSignal, candles: initialCandles
     // Always fetch fresh data when symbol, strategy, or timeframe changes
     fetchCandlesForTimeframe(globalTimeframe);
   }, [symbol, strategy, globalTimeframe]);
+
+  // Listen for candle saved events from WebSocket
+  useEffect(() => {
+    const handleCandleSaved = (event) => {
+      const { symbol: savedSymbol, timeframe: savedTimeframe } = event.detail;
+      // Only refresh if it matches current symbol and timeframe
+      if (savedSymbol === symbol && savedTimeframe === selectedTimeframe) {
+        console.log(`🔄 Refreshing chart for ${symbol} ${selectedTimeframe} after candle save`);
+        fetchCandlesForTimeframe(selectedTimeframe);
+      }
+    };
+
+    window.addEventListener('candleSaved', handleCandleSaved);
+    return () => window.removeEventListener('candleSaved', handleCandleSaved);
+  }, [symbol, selectedTimeframe]);
 
   // Close dropdown when clicking outside
   useEffect(() => {
@@ -569,6 +584,8 @@ const StrategyCard = ({ strategy, signal: initialSignal, candles: initialCandles
                 strategyName={strategy}
                 indicators={displaySignal?.indicators || {}}
                 trades={trades}
+                symbol={symbol}
+                timeframe={selectedTimeframe}
               />
             ) : (
               <div className="chart-no-data-card">

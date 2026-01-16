@@ -8,8 +8,12 @@ import json
 import asyncio
 import logging
 
-from database import get_db, engine
+from database import get_db, engine, SessionLocal
 from models import Base, Stock, Candle, Trade, Portfolio, Holding, StrategySettings, TimeFrame, TradeType, StrategyType, IndicatorValue
+from tracing_config import init_tracing, instrument_app
+
+# Initialize tracing
+init_tracing()
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -23,6 +27,9 @@ app = FastAPI(
     description="Paper trading API with strategy-based signals",
     version="1.0.0"
 )
+
+# Instrument the app with OpenTelemetry
+instrument_app(app)
 
 # CORS for React frontend
 app.add_middleware(
@@ -1421,56 +1428,122 @@ async def websocket_endpoint(
     """
     WebSocket endpoint for real-time candle updates.
     Connects to Binance WebSocket and streams live candle data.
+    Automatically saves closed candles to database.
     """
     from services.websocket_service import BinanceWebSocketClient
+    from datetime import datetime
     
     await websocket.accept()
     logger.info(f"WebSocket client connected for {symbol} {timeframe}")
     
-    # Create callback to forward Binance data to client
-    async def forward_to_client(candle_data: dict):
-        try:
-            await websocket.send_json(candle_data)
-        except Exception as e:
-            logger.error(f"Error sending data to WebSocket client: {e}")
-    
-    # Create Binance WebSocket client
-    binance_client = BinanceWebSocketClient(symbol, timeframe)
-    
-    # Start connection task
-    connection_task = asyncio.create_task(binance_client.connect(forward_to_client))
+    # Get database session
+    db = SessionLocal()
     
     try:
-        # Keep connection alive and handle client messages
-        while True:
+        # Get stock from database
+        stock = db.query(Stock).filter(Stock.symbol == symbol).first()
+        if not stock:
+            logger.warning(f"Stock {symbol} not found in database, creating...")
+            stock = Stock(symbol=symbol, name=symbol)
+            db.add(stock)
+            db.commit()
+            db.refresh(stock)
+        
+        # Create callback to forward Binance data to client and save to DB
+        async def forward_and_save(candle_data: dict):
             try:
-                # Wait for client messages (e.g., ping/pong)
-                data = await asyncio.wait_for(websocket.receive_text(), timeout=30.0)
+                # Forward to WebSocket client
+                await websocket.send_json(candle_data)
                 
-                # Echo back to keep connection alive
-                if data == "ping":
-                    await websocket.send_text("pong")
+                # Save closed candles to database
+                if candle_data.get('is_closed', False):
+                    logger.info(f"Saving closed candle for {symbol} {timeframe} at {candle_data['timestamp']}")
                     
-            except asyncio.TimeoutError:
-                # Send ping to keep connection alive
-                try:
-                    await websocket.send_json({"type": "ping"})
-                except:
-                    break
+                    # Parse timestamp
+                    timestamp = datetime.fromisoformat(candle_data['timestamp'].replace('Z', '+00:00'))
                     
-    except WebSocketDisconnect:
-        logger.info(f"WebSocket client disconnected for {symbol} {timeframe}")
-    except Exception as e:
-        logger.error(f"WebSocket error: {e}")
-    finally:
-        # Clean up Binance connection
-        await binance_client.disconnect()
-        connection_task.cancel()
+                    # Check if candle already exists
+                    existing = db.query(Candle).filter(
+                        Candle.stock_id == stock.id,
+                        Candle.timeframe == TimeFrame[timeframe.upper()],
+                        Candle.timestamp == timestamp
+                    ).first()
+                    
+                    if not existing:
+                        # Create new candle
+                        new_candle = Candle(
+                            stock_id=stock.id,
+                            timeframe=TimeFrame[timeframe.upper()],
+                            timestamp=timestamp,
+                            open=candle_data['open'],
+                            high=candle_data['high'],
+                            low=candle_data['low'],
+                            close=candle_data['close'],
+                            volume=candle_data['volume']
+                        )
+                        db.add(new_candle)
+                        db.commit()
+                        logger.info(f"✅ Saved new candle for {symbol} {timeframe}")
+                        
+                        # Notify client that chart should be refreshed
+                        await websocket.send_json({
+                            "type": "candle_saved",
+                            "message": "New candle saved to database"
+                        })
+                    else:
+                        # Update existing candle (in case of corrections)
+                        existing.open = candle_data['open']
+                        existing.high = candle_data['high']
+                        existing.low = candle_data['low']
+                        existing.close = candle_data['close']
+                        existing.volume = candle_data['volume']
+                        db.commit()
+                        logger.info(f"✅ Updated candle for {symbol} {timeframe}")
+                        
+            except Exception as e:
+                logger.error(f"Error in forward_and_save: {e}")
+                db.rollback()
+        
+        # Create Binance WebSocket client
+        binance_client = BinanceWebSocketClient(symbol, timeframe)
+        
+        # Start connection task
+        connection_task = asyncio.create_task(binance_client.connect(forward_and_save))
+        
         try:
-            await connection_task
-        except asyncio.CancelledError:
-            pass
-        logger.info(f"WebSocket connection closed for {symbol} {timeframe}")
+            # Keep connection alive and handle client messages
+            while True:
+                try:
+                    # Wait for client messages (e.g., ping/pong)
+                    data = await asyncio.wait_for(websocket.receive_text(), timeout=30.0)
+                    
+                    # Echo back to keep connection alive
+                    if data == "ping":
+                        await websocket.send_text("pong")
+                        
+                except asyncio.TimeoutError:
+                    # Send ping to keep connection alive
+                    try:
+                        await websocket.send_json({"type": "ping"})
+                    except:
+                        break
+                        
+        except WebSocketDisconnect:
+            logger.info(f"WebSocket client disconnected for {symbol} {timeframe}")
+        except Exception as e:
+            logger.error(f"WebSocket error: {e}")
+        finally:
+            # Clean up Binance connection
+            await binance_client.disconnect()
+            connection_task.cancel()
+            try:
+                await connection_task
+            except asyncio.CancelledError:
+                pass
+            logger.info(f"WebSocket connection closed for {symbol} {timeframe}")
+    finally:
+        # Close database session
+        db.close()
 
 
 # ============ STARTUP ============

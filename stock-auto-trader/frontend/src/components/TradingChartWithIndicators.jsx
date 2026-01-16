@@ -1,5 +1,6 @@
 import { createChart } from 'lightweight-charts';
-import { useEffect, useRef } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { useWebSocket } from '../hooks/useWebSocket';
 import './TradingChart.css';
 
 const TradingChartWithIndicators = ({
@@ -9,18 +10,50 @@ const TradingChartWithIndicators = ({
   currentSignal = null,
   strategyName = '',
   indicators = null,
-  trades = []
+  trades = [],
+  symbol = '',
+  timeframe = '5m'
 }) => {
   const priceChartContainerRef = useRef(null);
   const indicatorChartContainerRef = useRef(null);
   const priceChartRef = useRef(null);
   const indicatorChartRef = useRef(null);
   const tooltipRef = useRef(null);
+  const candlestickSeriesRef = useRef(null);
+  const latestValuesRef = useRef(null);
+  const [liveCandle, setLiveCandle] = useState(null);
 
   // Determine if we need a separate indicator panel
   const needsIndicatorPanel = strategyName === 'MACD' || strategyName === 'RSI';
   const priceChartHeight = needsIndicatorPanel ? height * 0.65 : height;
   const indicatorChartHeight = height * 0.35;
+
+  // WebSocket connection for live updates - use useCallback to prevent recreation
+  const handleCandleUpdate = useCallback((candleData) => {
+    console.log('📈 Received live candle update:', candleData);
+    setLiveCandle(candleData);
+  }, []);
+
+  // Callback when a new candle is saved to database
+  const handleCandleSaved = useCallback(() => {
+    console.log('💾 Candle saved - triggering chart refresh');
+    // Trigger a re-fetch of data by notifying parent component
+    if (window.dispatchEvent) {
+      window.dispatchEvent(new CustomEvent('candleSaved', { detail: { symbol, timeframe } }));
+    }
+  }, [symbol, timeframe]);
+
+  console.log(`🔌 WebSocket for ${symbol} ${timeframe}:`, { symbol, timeframe, enabled: !!symbol && !!timeframe });
+
+  const { isConnected } = useWebSocket(
+    symbol,
+    timeframe,
+    handleCandleUpdate,
+    !!symbol && !!timeframe,
+    handleCandleSaved
+  );
+
+  console.log(`🔗 WebSocket connection status: ${isConnected ? 'CONNECTED ✅' : 'DISCONNECTED ❌'}`);
 
   useEffect(() => {
     console.log(`🎨 TradingChartWithIndicators initializing for ${strategyName}:`, {
@@ -187,6 +220,7 @@ const TradingChartWithIndicators = ({
       align-items: center;
     `;
     priceChartContainerRef.current.appendChild(latestValuesDisplay);
+    latestValuesRef.current = latestValuesDisplay;
 
     // Add candlestick series
     const candlestickSeries = priceChart.addCandlestickSeries({
@@ -197,6 +231,8 @@ const TradingChartWithIndicators = ({
       wickUpColor: '#10b981',
       wickDownColor: '#ef4444',
     });
+
+    candlestickSeriesRef.current = candlestickSeries;
 
     // Format candle data and sort by time
     const formattedData = data
@@ -1048,6 +1084,61 @@ const TradingChartWithIndicators = ({
       priceChart.remove();
     };
   }, [data, signals, height, currentSignal, strategyName, indicators, trades, needsIndicatorPanel, priceChartHeight, indicatorChartHeight]);
+
+  // Handle live candle updates from WebSocket
+  useEffect(() => {
+    console.log('🔄 Live candle effect triggered:', {
+      hasLiveCandle: !!liveCandle,
+      hasCandlestickSeries: !!candlestickSeriesRef.current,
+      hasLatestValuesDisplay: !!latestValuesRef.current,
+      liveCandle
+    });
+
+    if (!liveCandle || !candlestickSeriesRef.current || !latestValuesRef.current) {
+      return;
+    }
+
+    console.log('✅ Updating chart with live candle:', liveCandle);
+
+    const time = Math.floor(new Date(liveCandle.timestamp).getTime() / 1000);
+    const candleUpdate = {
+      time,
+      open: liveCandle.open,
+      high: liveCandle.high,
+      low: liveCandle.low,
+      close: liveCandle.close
+    };
+
+    // Update the chart with live data
+    candlestickSeriesRef.current.update(candleUpdate);
+
+    // Update the latest values display
+    const latest = liveCandle;
+    const change = latest.close - latest.open;
+    const changePercent = latest.open !== 0 ? (change / latest.open) * 100 : 0;
+    const isPositive = change >= 0;
+    const changeColor = isPositive ? '#10b981' : '#ef4444';
+    const changeSign = isPositive ? '+' : '';
+
+    const formatVolume = (vol) => {
+      if (!vol) return '0';
+      if (vol >= 1e9) return `${(vol / 1e9).toFixed(2)}B`;
+      if (vol >= 1e6) return `${(vol / 1e6).toFixed(2)}M`;
+      if (vol >= 1e3) return `${(vol / 1e3).toFixed(2)}K`;
+      return vol.toFixed(2);
+    };
+
+    latestValuesRef.current.innerHTML = `
+      <span style="color: #cbd5e1; font-weight: 600;">O</span> <span style="color: #94a3b8;">${latest.open.toFixed(2)}</span>
+      <span style="color: #cbd5e1; font-weight: 600;">H</span> <span style="color: #10b981;">${latest.high.toFixed(2)}</span>
+      <span style="color: #cbd5e1; font-weight: 600;">L</span> <span style="color: #ef4444;">${latest.low.toFixed(2)}</span>
+      <span style="color: #cbd5e1; font-weight: 600;">C</span> <span style="color: ${isPositive ? '#10b981' : '#ef4444'}; font-weight: 600;">${latest.close.toFixed(2)}</span>
+      <span style="color: ${changeColor}; font-weight: 600;">${changeSign}${change.toFixed(2)} (${changeSign}${changePercent.toFixed(2)}%)</span>
+      <span style="color: #cbd5e1; font-weight: 600;">Vol</span> <span style="color: #94a3b8;">${formatVolume(latest.volume)}</span>
+      ${isConnected ? '<span style="color: #10b981; margin-left: 8px;">● Live</span>' : '<span style="color: #64748b; margin-left: 8px;">○ Offline</span>'}
+    `;
+
+  }, [liveCandle, isConnected]);
 
   return (
     <div className="trading-chart-container" style={{ height: `${height}px` }}>

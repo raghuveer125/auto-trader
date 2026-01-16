@@ -11,3 +11,10 @@ pydantic==2.10.4
 websockets==14.1
 python-binance==1.0.22
 requests==2.32.5
+opentelemetry-api==1.27.0
+opentelemetry-sdk==1.27.0
+opentelemetry-exporter-otlp==1.27.0
+opentelemetry-instrumentation==0.48b0
+opentelemetry-instrumentation-fastapi==0.48b0
+opentelemetry-instrumentation-sqlalchemy==0.48b0
+opentelemetry-instrumentation-requests==0.48b0
