@@ -6,6 +6,7 @@ import StrategyCard from '../components/StrategyCard';
 import TradesTable from '../components/TradesTable';
 import { useWebSocket } from '../hooks/useWebSocket';
 import { candlesAPI, portfolioAPI, signalsAPI, stocksAPI, tradesAPI } from '../services/api';
+import { formatPrice } from '../utils/currency';
 import './Dashboard.css';
 
 const Dashboard = () => {
@@ -329,7 +330,12 @@ const Dashboard = () => {
                 <div className="stock-price">
                   <span className="price-label">Current Price:</span>
                   <span className="price-value">
-                    ${livePrice !== null ? livePrice.toFixed(2) : candles.length > 0 ? candles[candles.length - 1].close.toFixed(2) : '—'}
+                    {livePrice !== null
+                      ? formatPrice(livePrice, selectedStock)
+                      : candles.length > 0
+                        ? formatPrice(candles[candles.length - 1].close, selectedStock)
+                        : '—'
+                    }
                   </span>
                   {isConnected && livePrice !== null && (
                     <span className="live-indicator" style={{ marginLeft: '8px', color: '#10b981', fontSize: '12px' }}>● Live</span>

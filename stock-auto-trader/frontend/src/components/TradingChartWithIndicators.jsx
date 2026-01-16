@@ -1,6 +1,7 @@
 import { createChart } from 'lightweight-charts';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useWebSocket } from '../hooks/useWebSocket';
+import { getCurrencySymbol } from '../utils/currency';
 import './TradingChart.css';
 
 const TradingChartWithIndicators = ({
@@ -415,13 +416,14 @@ const TradingChartWithIndicators = ({
       });
 
       const priceColor = data.close >= data.open ? '#10b981' : '#ef4444';
+      const currencySymbol = getCurrencySymbol(symbol);
 
       tooltip.innerHTML = `
         <div style="margin-bottom: 4px; font-weight: 600; color: #cbd5e1;">${timeStr}</div>
-        <div>O: <span style="color: #94a3b8;">${data.open.toFixed(2)}</span></div>
-        <div>H: <span style="color: #10b981;">${data.high.toFixed(2)}</span></div>
-        <div>L: <span style="color: #ef4444;">${data.low.toFixed(2)}</span></div>
-        <div>C: <span style="color: ${priceColor}; font-weight: 600;">${data.close.toFixed(2)}</span></div>
+        <div>O: <span style="color: #94a3b8;">${currencySymbol}${data.open.toFixed(2)}</span></div>
+        <div>H: <span style="color: #10b981;">${currencySymbol}${data.high.toFixed(2)}</span></div>
+        <div>L: <span style="color: #ef4444;">${currencySymbol}${data.low.toFixed(2)}</span></div>
+        <div>C: <span style="color: ${priceColor}; font-weight: 600;">${currencySymbol}${data.close.toFixed(2)}</span></div>
       `;
 
       tooltip.style.display = 'block';
