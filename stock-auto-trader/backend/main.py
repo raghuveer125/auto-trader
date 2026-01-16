@@ -1435,12 +1435,24 @@ async def websocket_endpoint(
     WebSocket endpoint for real-time candle updates.
     Connects to Binance WebSocket and streams live candle data.
     Automatically saves closed candles to database.
+    Only works for cryptocurrency symbols (USDT/USDC pairs).
     """
     from services.websocket_service import BinanceWebSocketClient
+    from services.binance_service import is_crypto_symbol
     from datetime import datetime
     
     await websocket.accept()
     logger.info(f"WebSocket client connected for {symbol} {timeframe}")
+    
+    # Validate that this is a crypto symbol
+    if not is_crypto_symbol(symbol):
+        logger.warning(f"WebSocket connection rejected: {symbol} is not a cryptocurrency")
+        await websocket.send_json({
+            "type": "error",
+            "message": f"{symbol} is not a supported cryptocurrency. WebSocket only works for crypto symbols (e.g., BTCUSDT, ETHUSDT)"
+        })
+        await websocket.close(code=4000, reason="Not a cryptocurrency symbol")
+        return
     
     # Get database session
     db = SessionLocal()
@@ -1468,10 +1480,29 @@ async def websocket_endpoint(
                     # Parse timestamp
                     timestamp = datetime.fromisoformat(candle_data['timestamp'].replace('Z', '+00:00'))
                     
+                    # Convert timeframe string to TimeFrame enum
+                    # Format: "5m" -> "M5", "1h" -> "H1", "1d" -> "D1"
+                    timeframe_mapping = {
+                        "1m": TimeFrame.M1,
+                        "5m": TimeFrame.M5,
+                        "15m": TimeFrame.M15,
+                        "30m": TimeFrame.M30,
+                        "1h": TimeFrame.H1,
+                        "2h": TimeFrame.H2,
+                        "3h": TimeFrame.H3,
+                        "4h": TimeFrame.H4,
+                        "5h": TimeFrame.H5,
+                        "1d": TimeFrame.D1,
+                    }
+                    tf_enum = timeframe_mapping.get(timeframe)
+                    if not tf_enum:
+                        logger.error(f"Invalid timeframe: {timeframe}")
+                        return
+                    
                     # Check if candle already exists
                     existing = db.query(Candle).filter(
                         Candle.stock_id == stock.id,
-                        Candle.timeframe == TimeFrame[timeframe.upper()],
+                        Candle.timeframe == tf_enum,
                         Candle.timestamp == timestamp
                     ).first()
                     
@@ -1479,7 +1510,7 @@ async def websocket_endpoint(
                         # Create new candle
                         new_candle = Candle(
                             stock_id=stock.id,
-                            timeframe=TimeFrame[timeframe.upper()],
+                            timeframe=tf_enum,
                             timestamp=timestamp,
                             open=candle_data['open'],
                             high=candle_data['high'],
